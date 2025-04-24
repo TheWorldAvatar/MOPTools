@@ -86,7 +86,7 @@ def extract_chemicals(file_path, output_dir):
     # Generate a prompt using the DOI to provide context for the LLM
     prompt                              = llmp.chemical_prompt(doi)
     # Construct the full prompt by appending the synthesis text content
-    full_prompt                         = f"{prompt}\n\n{file_content}"
+    full_prompt                         = f"{prompt}\n{file_content}"
     # Initialize the ChatGPT API client
     chatgpt_api                         = ChatGPTAPI()
     # Retrieve the expected chemical data schema for structuring the response
@@ -120,7 +120,7 @@ def extract_steps(file_path, output_dir):
     # Generate a prompt string to guide the LLM in identifying synthesis step types
     prompt_step_types                   = llmp.step_types_prompt()
     # Combine the prompt with the synthesis text for context
-    adaptive_prompt                     = f"{prompt_step_types}\n\n{file_content}"
+    adaptive_prompt                     = f"{prompt_step_types}\n{file_content}"
     # Initialize the ChatGPT API client
     chatgpt_api                         = ChatGPTAPI()
     # Make an API call to extract the relevant step types from the synthesis text
@@ -130,7 +130,7 @@ def extract_steps(file_path, output_dir):
     # Generate an updated prompt incorporating the extracted step types
     prompt                              = llmp.step_prompt(doi, dynamic_prompt)
     # Append the synthesis text to the updated prompt
-    full_prompt                         = f"{prompt}\n\n{file_content}"
+    full_prompt                         = f"{prompt}\n{file_content}"
     # Retrieve the schema for extracting detailed step information based on the identified step types
     schema                              = jschem.step_schema(dynamic_prompt)
     # Make another LLM call to extract detailed synthesis steps
@@ -162,7 +162,7 @@ def extract_pre_steps(file_path, output_dir):
     # Generate a predefined prompt for extracting pre-synthesis steps (without dynamic modification)
     prompt                              = llmp.pre_steps_prompt()
     # Combine the prompt with the synthesis text for context
-    full_prompt                         = f"{prompt}\n\n{file_content}"
+    full_prompt                         = f"{prompt}\n{file_content}"
     # Construct the message structure for the LLM API request
     messages    =[
       {"role": "system","content": "You will be provided with synthesis text and your task is to extract text based on the instruction."},
@@ -194,7 +194,7 @@ def extract_procedure(file_path, output_dir):
     # Generate a prompt to guide the LLM in extracting procedure-related information
     prompt                      = llmp.procedure_prompt(doi)
     # Combine the prompt with the synthesis text for context
-    full_prompt                 = f"{prompt}\n\n{file_content}"
+    full_prompt                 = f"{prompt}\n{file_content}"
     # Construct the message structure for the LLM API request
     messages    =[
       {"role": "system","content": "You will be provided with synthesis text and your task is to extract text based on the instruction."},
