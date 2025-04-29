@@ -27,7 +27,7 @@ ref_ligand = pd.read_csv(os.path.join(ref_folder_path,H3BTC_IR_REF), delimiter='
 ref_solvent = pd.read_csv(os.path.join(ref_folder_path,DMF_IR_REF), delimiter='\t', header=None, names=['wavenumber', 'intensity'])
 ref_water = pd.read_csv(os.path.join(ref_folder_path,DIW_IR_REF), delimiter='\t', header=None, names=['wavenumber', 'intensity'])
 
-sparql_client = PySparqlClient(credentials.SPARQL_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
+sparql_client = PySparqlClient(credentials.SPARQL_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER)
 peaks = sparql_client.perform_query(queryMOPs.construct(Zr_H3BTC_MOP_IRI))
 #print(peaks)
 
