@@ -3,3 +3,5 @@ pandas
 numpy
 scipy
 pydantic 
+plotly
+rdkit
