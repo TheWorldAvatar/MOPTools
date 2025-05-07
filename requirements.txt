@@ -1,3 +1,5 @@
 twa==0.0.5
 pandas
 numpy
+scipy
+pydantic 
