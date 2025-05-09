@@ -1,4 +1,7 @@
 # Metal-Organic Polyhedra in TWA
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/TheWorldAvatar/MOPTools/HEAD?urlpath=%2Fdoc%2Ftree%2Ftwa_mops%2Fassembly.ipynb)
+
 This repository contains all code related to the analysis, design, and synthesis of metal-organic polyhedra (MOPs), a class of discrete reticular materials, within The World Avatar (TWA).
 
 ## Rational Design of MOPs
