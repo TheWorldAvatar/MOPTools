@@ -459,7 +459,7 @@ class Transfer(SynthesisStep):
     isTransferedTo                      : Optional[IsTransferedTo[Vessel]]                              = set()
     isLayeredTransfer                   : Optional[IsLayeredTransfer[bool]]                             = set()
     hasTransferedAmount                 : Optional[HasTransferedAmount[Volume]]                         = set()
-class SeparationType(SynthesisStep):
+class SeparationType(BaseClass):
     rdfs_isDefinedBy                    = OntoSyn
 class Separate(SynthesisStep):
     rdfs_isDefinedBy                    = OntoSyn
