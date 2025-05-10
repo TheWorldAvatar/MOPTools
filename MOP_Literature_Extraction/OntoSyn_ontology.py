@@ -13,72 +13,41 @@ class OntoSyn(BaseOntology):
     # Below fields can be set up to provide metadata for your ontology
     base_url:           ClassVar[str]           = TWA_BASE_URL
     namespace:          ClassVar[str]           = 'OntoSyn'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
+    owl_versionInfo:    ClassVar[str]           = '1.0.0'
+    rdfs_comment:       ClassVar[str]           = 'An ontology developed for representing chemical synthesis procedures. This version is specific to the synthesis of metal-organic polyhedra (MOPs).'
 class OntoMOPs(BaseOntology):
     base_url:           ClassVar[str]           = "https://www.theworldavatar.com/kg/"
     namespace:          ClassVar[str]           = 'ontomops/'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class OntoLab(BaseOntology):
     base_url:           ClassVar[str]           = TWA_BASE_URL
     namespace:          ClassVar[str]           = 'OntoLab'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class OM2(BaseOntology):
     base_url:           ClassVar[str]           = "http://www.ontology-of-units-of-measure.org/resource/"
     namespace:          ClassVar[str]           = 'om-2'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class BIBO(BaseOntology):
     base_url:           ClassVar[str]           = "http://purl.org/ontology/"
     namespace:          ClassVar[str]           = 'bibo'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class OntoCapeMaterial(BaseOntology):
     base_url:           ClassVar[str]           = "http://www.theworldavatar.com/ontology/ontocape/material/"
     namespace:          ClassVar[str]           = 'material.owl#'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class OntoCapePhaseSystem(BaseOntology):
-    # Below fields can be set up to provide metadata for your ontology
     base_url:           ClassVar[str]           = "http://www.theworldavatar.com/ontology/ontocape/material/phase_system/"
     namespace:          ClassVar[str]           = 'phase_system.owl#'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class OntoCapeSystem(BaseOntology):
-    # Below fields can be set up to provide metadata for your ontology
     base_url:           ClassVar[str]           = "http://www.theworldavatar.com/ontology/ontocape/upper_level/"
     namespace:          ClassVar[str]           = 'system.owl#'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class OntoSpecies(BaseOntology):
-    # Below fields can be set up to provide metadata for your ontology
     base_url:           ClassVar[str]           = "http://www.theworldavatar.com/ontology/ontospecies/OntoSpecies.owl#"
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class RDFS(BaseOntology):
-    # Below fields can be set up to provide metadata for your ontology
     base_url:           ClassVar[str]           = "http://www.w3.org/2000/01/"
     namespace:          ClassVar[str]           = 'rdf-schema'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class SKOS(BaseOntology):
-    # Below fields can be set up to provide metadata for your ontology
     base_url:           ClassVar[str]           = "http://www.w3.org/2004/02/skos/"
     namespace:          ClassVar[str]           = 'core#'
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class DAML(BaseOntology):
-    # Below fields can be set up to provide metadata for your ontology
     base_url:           ClassVar[str]           = "http://www.daml.org/2003/01/periodictable/PeriodicTable#"
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 class OntoReaction(BaseOntology):
-    # Below fields can be set up to provide metadata for your ontology
     base_url:           ClassVar[str]           = "https://www.theworldavatar.com/kg/ontoreaction/"
-    owl_versionInfo:    ClassVar[str]           = '0.0.1'
-    rdfs_comment:       ClassVar[str]           = 'Your ontology'
 ###-----------------------------------------------------------------------------------------------
 # Datatype Properties:
 class HasX1(DatatypeProperty):
