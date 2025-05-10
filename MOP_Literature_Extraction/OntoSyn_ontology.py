@@ -364,8 +364,6 @@ class VesselType(BaseClass):
 class Vessel(LabEquipment):
     rdfs_isDefinedBy                    = OntoSyn
     hasVesselType                       : Optional[HasVesselType[VesselType]]                       = set()
-class ExecutionPoint(BaseClass):
-    rdfs_isDefinedBy                    = OntoSyn
 class SynthesisStep(BaseClass):
     rdfs_isDefinedBy                    = OntoSyn
     hasVessel                           : Optional[HasVessel[Vessel]]                               = set()
@@ -477,4 +475,4 @@ class HeatChill(SynthesisStep):
     hasHeatChillDevice                  : Optional[HasHeatChillDevice[HeatChillDevice]]                 = set()
 
 if __name__ == "__main__":
-    OntoSyn.export_to_owl('OntoSyn.ttl', format='turtle')
+    OntoSyn.export_to_owl('OntoSyn.ttl', format='xml')
