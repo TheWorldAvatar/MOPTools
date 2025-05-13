@@ -1149,3 +1149,14 @@ class MetalOrganicPolyhedron(CoordinationCage):
 
         return distances
 
+    
+    def rms_neighbor_binding_site_distance(self) -> float:
+        """
+        Compute the RMS of all neighbouring‐CBU min binding‐site distances.
+        """
+        distances = self.cbu_neighbor_binding_site_distances().values()
+        distances = list(distances)
+        if not distances:
+            raise ValueError("distances between binding sites is empty")
+        return math.sqrt(sum(d*d for d in distances) / len(distances))
+    
