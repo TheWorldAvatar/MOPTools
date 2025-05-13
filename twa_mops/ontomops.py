@@ -313,10 +313,11 @@ class AssemblyModel(BaseClass):
 
     @property
     def pairs_of_connected_gbus(self) -> Dict:
+        # sort so always use the same when calculating the scaling factor since otherwise in cases where not equal will get varying scaling factor
         pairs = {}
-        for cc in self.hasGBUCoordinateCenter:
+        for cc in sorted(self.hasGBUCoordinateCenter, key=lambda x: x.instance_iri):
             cc: GBUCoordinateCenter
-            cps = list(cc.hasGBUConnectingPoint)
+            cps = sorted(list(cc.hasGBUConnectingPoint), key=lambda x: x.instance_iri)
             for cp in cps:
                 if cp.instance_iri not in pairs:
                     pairs[cp.instance_iri] = [cc]
