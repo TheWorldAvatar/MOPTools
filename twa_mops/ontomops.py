@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from scipy.optimize import fsolve
 from datetime import datetime
 import plotly.express as px
@@ -769,6 +769,48 @@ class ChemicalBuildingUnit(BaseClass):
         fig.update_layout(autosize=False, width=1200, height=400)
         fig.show()
         return fig
+    
+    
+    def cbu_neighbor_binding_site_distances(self) -> Dict[str, float]:
+        """
+        Returns a mapping {(CBU1_IRI, CBU2_IRI): min_distance}
+        for each pair of CBUs that sit on neighbouring GBUs.
+        """
+        # import pdb; pdb.set_trace()
+        # 1) build a lookup: GBU_IRI -> (CBU_IRI, [transformed binding-site Points])
+        lookup: Dict[str, Tuple[str, List[Point]]] = {}
+        for trans in self.hasCBUAssemblyTransformation:
+            # `transforms` is the CBU
+            cbu = next(iter(trans.transforms))
+            # `alignsTo` is the GBU center it sits on
+            gcc = next(iter(trans.alignsTo))
+            lookup[gcc] = (
+                cbu,
+                trans.transformed_binding_sites[gcc]
+            )
+
+        distances: Dict[Tuple[str, str], float] = {}
+        # 2) for each connecting‐point, get its two GBU centers → find CBUs → compute min inter-site distance
+        for cp_iri, gc_pair in list(self.hasAssemblyModel)[0].pairs_of_connected_gbus.items():
+            gc1, gc2 = gc_pair
+            iri1, sites1 = lookup.get(gc1.instance_iri, (None, []))
+            iri2, sites2 = lookup.get(gc2.instance_iri, (None, []))
+            if not iri1 or not iri2 or not sites1 or not sites2:
+                # alignment or sites missing
+                continue
+
+            # 3) all‐vs‐all distances, then pick the minimum
+            min_d = min(
+                p1.get_distance_to(p2)
+                for p1 in sites1
+                for p2 in sites2
+            )
+            # store under the two CBU IRIs (sorted so key is order-invariant)
+            # key = tuple(sorted((iri1, iri2)))
+            distances[cp_iri] = min_d
+
+        return distances
+
 
 
 class CBUAssemblyTransformation(BaseClass):
