@@ -881,6 +881,81 @@ class MetalOrganicPolyhedron(CoordinationCage):
                 rotated_cbu_center_to_binding_site_plane = Vector.from_array(rotation_matrix_1[gbu_center.instance_iri].apply(cbu.vector_to_binding_site_plane.as_array))
                 rotation_matrix_2[gbu_center.instance_iri] = Vector.from_array(rotated).get_rotation_matrix_to_parallel(
                     second_vector_for_alignment_gbu, flip_if_180=True, base_axis_if_180=rotated_cbu_center_to_binding_site_plane)
+
+            # cross product of vector 1 and vector 2, check pointing away from assembly centre for GBU and pointing towards bulk for cbu
+            # align the two vectors and combine with rm2 (is combining them smart?)
+            if not cbu.is_metal_cbu: # TODO only run if the norm of the bulk vector is significant
+                cbu_geo_centre = Point.centroid(list(cbu.hasGeometry)[0].hasPoints)
+                cbu_assembly_center = list(cbu.hasCBUAssemblyCenter)[0].coordinates
+                for gbu_center in gbu.hasGBUCoordinateCenter:
+                    gbu_center: GBUCoordinateCenter
+                    first_vector_for_alignment_gbu = gbu_center.vector_to_connecting_point_plane
+                    if gbu.is_4_planar:
+                        second_vector_for_alignment_gbu = gbu_center.vector_to_shortest_side
+                    else:
+                        second_vector_for_alignment_gbu = gbu_center.vector_to_farthest_connecting_point
+
+                    # rotate the CBU alignment vectors using the previously determined transformations
+                    rotated_first_alignment_vector_cbu = Vector.from_array(
+                        rotation_matrix_2[gbu_center.instance_iri].apply(
+                            rotation_matrix_1[gbu_center.instance_iri].apply(
+                                first_alignment_vector_cbu.as_array
+                            )
+                        )
+                    )
+                    rotated_second_alignment_vector_cbu = Vector.from_array(
+                        rotation_matrix_2[gbu_center.instance_iri].apply(
+                            rotation_matrix_1[gbu_center.instance_iri].apply(
+                                second_vector_for_alignment_cbu.as_array
+                            )
+                        )
+                    )
+
+                    # calculate the third alignment vector by cross product of first two
+                    third_vector_for_alignment_cbu = Vector.from_array(
+                        rotated_first_alignment_vector_cbu.get_cross_product(rotated_second_alignment_vector_cbu)
+                    )
+
+                    # calculate the vector from the cbu assembly centre to the bulk of the ligand
+                    rotated_bulk_vec = Vector.from_array(
+                        rotation_matrix_2[gbu_center.instance_iri].apply(
+                            rotation_matrix_1[gbu_center.instance_iri].apply(
+                                 Vector.from_two_points(cbu_assembly_center, cbu_geo_centre).as_array
+                            )
+                        )
+                    )
+
+                    # check the CBU third vector in same direction as bulk vector
+                    if third_vector_for_alignment_cbu.get_dot_product(rotated_bulk_vec) < 0:
+                        third_vector_for_alignment_cbu = third_vector_for_alignment_cbu.get_flip_vector()
+
+
+                    # do same for the GBU alignment vectors (don't need to be transformed since from AM)
+                    third_vector_for_alignment_gbu = Vector.from_array(
+                        first_vector_for_alignment_gbu.get_cross_product(second_vector_for_alignment_gbu)
+                    )
+
+                    # check the GBU vector is pointing away from the AM centre, if not flip it
+                    gbu_to_mop = gbu_center.vector_from_am_center
+                    if third_vector_for_alignment_gbu.get_dot_product(gbu_to_mop) < 0:
+                        third_vector_for_alignment_gbu = third_vector_for_alignment_gbu.get_flip_vector()
+
+
+                    # determine rotation matrix to align the third vectors
+                    rm = third_vector_for_alignment_cbu.get_rotation_matrix_to_parallel(
+                        third_vector_for_alignment_gbu,
+                        flip_if_180=True,
+                        base_axis_if_180=rotated_first_alignment_vector_cbu,
+                        # base_axis_if_180=rotated_second_alignment_vector_cbu,
+                    )
+
+                    # combine with the second rotation matrix
+                    # TODO implement a third rotation matrix dict, remove hard coding of two
+                    # rotation matrices in next section
+                    rotation_matrix_2[gbu_center.instance_iri] = rotation_matrix_2[gbu_center.instance_iri].combine(rm)
+
+
+
             # put the two rotation matrix together
             cbu_rotation_matrix[cbu.instance_iri] = {
                 gbu_center.instance_iri: [
