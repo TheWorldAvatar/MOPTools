@@ -1106,3 +1106,46 @@ class MetalOrganicPolyhedron(CoordinationCage):
         fig.update_layout(autosize=False, width=1200, height=400)
         fig.show()
         return fig
+    
+    
+    def cbu_neighbor_binding_site_distances(self) -> Dict[str, float]:
+        """
+        Returns a mapping {(CBU1_IRI, CBU2_IRI): min_distance}
+        for each pair of CBUs that sit on neighbouring GBUs.
+        """
+        # mapping of gcc to cbu and the corresponding binding sites, needed since assembly model contains gbus
+        gcc_to_cbu: Dict[str, Tuple[str, List[Point]]] = {}
+        for trans in self.hasCBUAssemblyTransformation:
+            cbu = next(iter(trans.transforms)) # 'transforms' attribute is the CBU object 
+            gcc = next(iter(trans.alignsTo)) # 'alignsTo' attribute is the GBU coordinate center it sits on
+            gcc_to_cbu[gcc] = (
+                cbu,
+                trans.transformed_binding_sites[gcc]
+            )
+
+        # for each connecting point in the assembly model, get the gcc and then use the mapping to get the cbus 
+        # and binding sites
+        distances: Dict[Tuple[str, str], float] = {}
+        for cp_iri, gc_pair in list(self.hasAssemblyModel)[0].pairs_of_connected_gbus.items():
+            gc1, gc2 = gc_pair
+            try:
+                _, sites1 = gcc_to_cbu.get[gc1.instance_iri]
+                _, sites2 = gcc_to_cbu.get[gc2.instance_iri]
+            except KeyError:
+                print("gcc IRIs not in MOP transformations: {} {}".format(gc1.instance_iri, gc2.instance_iri))
+                raise
+
+            # calculate distance between all pairs of binding sites from CBU's, assume the connected binding sites 
+            # have the lowest distance
+            min_d = min(
+                p1.get_distance_to(p2)
+                for p1 in sites1
+                for p2 in sites2
+            )
+
+            # store under the two CBU IRIs (sorted so key is order-invariant)
+            # key = tuple(sorted((iri1, iri2)))
+            distances[cp_iri] = min_d
+
+        return distances
+
