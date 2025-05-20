@@ -98,7 +98,7 @@ class Point(BaseModel):
         max_point = None
         for pt in points:
             dist = self.get_distance_to(pt)
-            if dist > max_dist:
+            if dist >= max_dist:
                 max_dist = dist
                 max_point = pt
         return max_point
