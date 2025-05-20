@@ -1,0 +1,8 @@
+twa
+scipy
+rdkit
+numpy
+pandas
+plotly
+kaleido
+nbformat

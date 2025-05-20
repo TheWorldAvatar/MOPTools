@@ -594,9 +594,7 @@ class ChemicalBuildingUnit(BaseClass):
             "CENTER": {"atom": "CENTER", "coordinate_x": 0.0, "coordinate_y": 0.0, "coordinate_z": 0.0}
         }
         """
-        cbu_binding_points = {}
         lst_binding_sites = []
-        cbu_atoms = {}
         atom_points = []
         cbu_atoms_acc_x = 0.0
         cbu_atoms_acc_y = 0.0
@@ -611,7 +609,6 @@ class ChemicalBuildingUnit(BaseClass):
                     hasBindingPoint=BindingPoint(hasX=v['coordinate_x'], hasY=v['coordinate_y'], hasZ=v['coordinate_z']),
                     hasBindingFragment=binding_fragment,
                 )
-                cbu_binding_points[k] = pt
                 lst_binding_sites.append(pt)
             elif str(v['atom']).lower() == 'center':
                 print('NOTE!!! Center point is not used in the current implementation.')
@@ -620,12 +617,35 @@ class ChemicalBuildingUnit(BaseClass):
                 cbu_atoms_acc_x += v['coordinate_x']
                 cbu_atoms_acc_y += v['coordinate_y']
                 cbu_atoms_acc_z += v['coordinate_z']
-                cbu_atoms[k] = pt
                 atom_points.append(pt)
+
+        # regulate the binding sites so that they are the centroid of the binding atoms
+        for bs in lst_binding_sites:
+            bas = Point.centroid(bs.binding_atoms(atom_points))
+            bs.hasBindingPoint = BindingPoint(hasX=bas.x, hasY=bas.y, hasZ=bas.z)
 
         assemb_center = BindingSite.compute_assembly_center_from_binding_sites(lst_binding_sites, atom_points, gbu_type, binding_fragment)
 
         return lst_binding_sites, assemb_center, atom_points
+
+    @staticmethod
+    def process_xyz_to_json(cbu_xyz_fpath):
+        cbu_xyz_dict = {}
+        with open(cbu_xyz_fpath, 'r') as f:
+            lines = f.readlines()
+            for idx, line in enumerate(lines):
+                parts = line.split()
+                if len(parts) < 4:
+                    # Skip lines that do not have enough parts
+                    continue
+                cbu_xyz_dict[str(idx)] = {
+                    'atom': parts[0],
+                    'coordinate_x': float(parts[1]),
+                    'coordinate_y': float(parts[2]),
+                    'coordinate_z': float(parts[3])
+                }
+
+        return json.dumps(cbu_xyz_dict)
 
     @classmethod
     def from_geometry_json(cls, cbu_formula, cbu_json, charge, ocn, binding_fragment, gbu_type, gbu: str = None, direct_binding: bool = True, metal_site: bool = False):
@@ -661,6 +681,26 @@ class ChemicalBuildingUnit(BaseClass):
             hasGeometry=cbu_geo,
             hasCBUFormula=cbu_formula,
             hasCBUAssemblyCenter=assemb_center
+        )
+
+    @classmethod
+    def from_geometry_xyz(cls, cbu_formula, cbu_xyz_fpath, charge, ocn, binding_fragment, gbu_type, gbu: str = None, direct_binding: bool = True, metal_site: bool = False):
+        """
+        The passed `cbu_xyz_fpath` should be the path to the XYZ file containing the coordinates of the CBU, as well as dummy atoms labelled using 'X'.
+        """
+        print(cls.process_xyz_to_json(cbu_xyz_fpath))
+        print(json.loads(cls.process_xyz_to_json(cbu_xyz_fpath)))
+
+        return cls.from_geometry_json(
+            cbu_formula=cbu_formula,
+            cbu_json=json.loads(cls.process_xyz_to_json(cbu_xyz_fpath)),
+            charge=charge,
+            ocn=ocn,
+            binding_fragment=binding_fragment,
+            gbu_type=gbu_type,
+            gbu=gbu,
+            direct_binding=direct_binding,
+            metal_site=metal_site
         )
 
     @property
