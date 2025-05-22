@@ -13,6 +13,13 @@ ontospecies_client = twa.kg_operations.PySparqlClient(credentials.ONTOSPECIES_EN
 
 synthesis_iris = ['https://www.theworldavatar.com/kg/OntoSyn/ChemicalSynthesis_96270260-1b57-43e5-80b1-a6b23bb6ceca']
 syns = ontosyn.ChemicalSynthesis.pull_from_kg(iris=synthesis_iris,sparql_client=ontosyn_client,recursive_depth=-1)
+    
+def encode_to_utf(str):
+    try:
+        return str.encode('ISO-8859-1').decode('utf-8')
+    except Exception as e:
+        print(f"unable to encode {str}: {e}")
+        return str
 
 
 def getMaterial(material,name=''):
@@ -23,7 +30,7 @@ def getMaterial(material,name=''):
     compStrings = []
     for subsystem in subsystems:
         species = list(subsystem.representsOccurenceOf)[0]
-        speciesLab = list(species.rdfs_label)[0]
+        speciesLab = encode_to_utf(list(species.rdfs_label)[0])
         conc=list(subsystem.hasProperty)[0]
         amount = getValue(conc,"undefined amount")
         if ontospecies_client.check_if_triple_exist(species.instance_iri,None,None):
@@ -46,7 +53,7 @@ def getValue(meas,defaultString="unknown"):
         unit=list(val.hasUnit)[0]
     else:
         unit=list(val.hasUnitOfMeasure)[0]
-    unitLab=list(unit.rdfs_label)[0]
+    unitLab=encode_to_utf(list(unit.rdfs_label)[0])
     if numVal==0.0 and unitLab=="N/A":
         amount = defaultString
     else:
