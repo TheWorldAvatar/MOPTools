@@ -7,6 +7,20 @@ sys.path.append(PROCESSING_DIR)
 import upload_utils as uputils
 import predefine_iris as piris
 
+def encode_to_iso_8859_1(str):
+    """
+    attempts to change encoding from utf-8 to ISO-8859-1 (latin-1).
+    If fails returns empty string
+    """
+    try:
+        return str.encode("utf-8").decode("ISO-8859-1")
+    except UnicodeDecodeError:
+        return ""
+    except UnicodeEncodeError:
+        return ""
+
+
+
 def query_characterisation(doi:str):
     """
     Queries chemical characterization data from an OntoSynthesis knowledge graph based on a given DOI.
@@ -588,6 +602,7 @@ def species_querying(client, species_label):
     """
     # Remove 'N/A' values from the species label list to avoid linking to non-existent instances
     species_label               = [item for item in species_label if item != 'N/A']
+    species_label               += [ encode_to_iso_8859_1(item) for item in species_label ] # add deformed ISO-8859-1 strings in case
     # Initialize a string to hold formatted species labels for the query
     insert_string               = ""
     # Loop through each species label to format it correctly for the SPARQL VALUES clause
@@ -634,6 +649,7 @@ def species_querying_ontosyn(client, species_label):
     """
     # Remove 'N/A' values from the list to prevent incorrect matches
     species_label               = [item for item in species_label if item != 'N/A']
+    species_label               += [ encode_to_iso_8859_1(item) for item in species_label ] # add deformed ISO-8859-1 strings in case
     # Initialize an empty string to store formatted values for the SPARQL query
     insert_string               = ""
     # Loop through each label in the list to format it properly for SPARQL VALUES clause
