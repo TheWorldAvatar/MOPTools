@@ -1118,3 +1118,68 @@ class MetalOrganicPolyhedron(CoordinationCage):
             raise ValueError("distances between binding sites is empty")
         return math.sqrt(sum(d*d for d in distances) / len(distances))
     
+    def calculate_repulsion(self) -> float:
+        """
+        Calculate an approximate r^-12 repulsion energy between pairs of atoms
+        from distinct organic CBUs.
+
+        inspired from cgbind (https://github.com/duartegroup/cgbind)
+        """
+        from scipy.spatial import distance_matrix
+
+        # get the transformed coordinates of each organic cbu
+        cbu_coords = {}
+        cbu_i = 0
+        for t in self.hasCBUAssemblyTransformation:
+
+            # pull the cbu using the iri stored in the transformation
+            cbu_iri = list(t.transforms)[0]
+            cbu = KnowledgeGraph.get_object_from_lookup(cbu_iri)
+
+            # skip if metal cbu
+            if cbu.is_metal_cbu:
+                continue
+
+            # get the atom coordinates from the cbu geometry
+            geo = list(cbu.hasGeometry)[0]
+            if geo.hasPoints is None:
+                raise ValueError(f"Geometry for CBU {cbu_iri} not loaded.")
+            pts = np.array([
+                pt.as_array for pt in geo.hasPoints if pt.label.lower() not in ['x', 'center']
+            ])
+
+            # apply rotations
+            quat_str = list(t.quaternionToRotate)[0]
+            R = Quaternion.from_string(quat_str).as_rotation_matrix()
+            pts = np.array([ R.apply(p) for p in pts ])
+
+            # translate cbu to gbu centre using calculated scaling factor
+            s = list(t.scaleFactorToAlignCoordinateCenter)[0]
+            cbu_centre = list(cbu.hasCBUAssemblyCenter)[0].coordinates.as_array
+            rotated_cbu_centre = R.apply(cbu_centre)
+            gcc_iri = list(t.alignsTo)[0] # gbu coordinate centre
+            gcc = KnowledgeGraph.get_object_from_lookup(gcc_iri)
+            gcc_scaled = gcc.coordinates.as_array * s
+            vec = gcc_scaled - rotated_cbu_centre
+            pts = pts + vec
+
+            # translate back to origin, not necessary but may as well for consistency
+            vec = Vector.from_string(
+                list(t.translationVectorToAlignOrigin)[0]
+            ).as_array
+            pts += vec
+
+            cbu_coords[cbu_i] = pts
+            cbu_i += 1
+
+        # repulsion calculation
+        repulsion = 0.0
+        cbus = list(cbu_coords)
+        for i in range(len(cbus)):
+            A = cbu_coords[cbus[i]]
+            for j in range(i+1, len(cbus)):
+                B = cbu_coords[cbus[j]]
+                dist_mat = distance_matrix(A, B)
+                repulsion += np.sum(np.power(dist_mat, -12))
+
+        return float(repulsion)
