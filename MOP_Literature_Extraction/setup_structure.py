@@ -7,7 +7,7 @@ def create_directory(script_dir, folder_name):
 
     :param path: The path of the directory to create.
     """
-    synText                         = os.path.join(script_dir,f"Data/{synText}")
+    synText                         = os.path.join(script_dir,"Data/synText")
     input_dir_pdf                   = os.path.join(script_dir,f"Data/{folder_name}_pdf")
     input_dir_txt                   = os.path.join(script_dir,f"Data/{folder_name}_txt")
     input_dir_cbu                   = os.path.join(script_dir,f"Data/{folder_name}_cbu")
