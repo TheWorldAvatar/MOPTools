@@ -310,6 +310,8 @@ def query_mop_names(doi:str):
     print("species labels: ", species_labels)
     # Extract species labels into a list
     species_list                        = [species["lab"] for species in species_labels]
+    species_list += [ encode_to_iso_8859_1(item) for item in species_list ] # add deformed ISO-8859-1 strings in case
+    species_labels = list(set(species_list))
     return species_list
 # -------------------------------------------------------------------
 # generate synthesis text queries
@@ -601,12 +603,12 @@ def species_querying(client, species_label):
     list: A list of species entities retrieved from the query.
     """
     # Remove 'N/A' values from the species label list to avoid linking to non-existent instances
-    species_label               = [item for item in species_label if item != 'N/A']
-    species_label               += [ encode_to_iso_8859_1(item) for item in species_label ] # add deformed ISO-8859-1 strings in case
+    _species_label               = [item for item in species_label if item != 'N/A']
+    _species_label               += [ encode_to_iso_8859_1(item) for item in _species_label ] # add deformed ISO-8859-1 strings in case
     # Initialize a string to hold formatted species labels for the query
     insert_string               = ""
     # Loop through each species label to format it correctly for the SPARQL VALUES clause
-    for label in species_label:
+    for label in set(_species_label):
         # If the label contains double quotes, use triple double quotes for proper escaping
         if '"' in label:
             insert_string += f' """{label}""" '
@@ -648,12 +650,12 @@ def species_querying_ontosyn(client, species_label):
     list: Query results containing matching species instances.
     """
     # Remove 'N/A' values from the list to prevent incorrect matches
-    species_label               = [item for item in species_label if item != 'N/A']
-    species_label               += [ encode_to_iso_8859_1(item) for item in species_label ] # add deformed ISO-8859-1 strings in case
+    _species_label               = [item for item in species_label if item != 'N/A']
+    _species_label               += [ encode_to_iso_8859_1(item) for item in _species_label ] # add deformed ISO-8859-1 strings in case
     # Initialize an empty string to store formatted values for the SPARQL query
     insert_string               = ""
     # Loop through each label in the list to format it properly for SPARQL VALUES clause
-    for label in species_label:
+    for label in set(_species_label):
         # Ensure proper formatting of string literals in SPARQL query
         if '"' in label:
             insert_string += f' """{label}""" '     # Triple quotes for labels containing double quotes
@@ -692,6 +694,8 @@ def mop_querying(client, CCDC_number, mop_formula, mop_name):
     Returns:
         list: Query results containing MOP identifiers.
     """
+    if isinstance(mop_name, str):
+        mop_name = [mop_name]
     # Remove 'N/A' or other invalid values from input parameters
     CCDC_number             = uputils.remove_na(CCDC_number)
     mop_formula             = uputils.remove_na(mop_formula)
@@ -699,7 +703,8 @@ def mop_querying(client, CCDC_number, mop_formula, mop_name):
     print("querying for mop: ", CCDC_number, mop_formula, mop_name)
     insert_string               = ""
     # Construct a formatted list of mop names for use in the SPARQL query
-    for label in mop_name:
+    _mop_name = mop_name + [ encode_to_iso_8859_1(item) for item in mop_name ] # add deformed ISO-8859-1 strings in case
+    for label in set(_mop_name):
         if label != "N/A" and label != "" and label != " " and label != 'lab':
             # Format strings correctly for SPARQL syntax
             if '"' in label:
@@ -774,8 +779,12 @@ def CBU_querying(client, cbu_formula):
 def chemicalOutput_querying(client, CCDC_number, mop_formula, mop_name):
     print("querying for mop: ", CCDC_number, mop_formula, mop_name)
     insert_string               = ""
+    _mop_name = mop_name
+    if isinstance(_mop_name, str):
+        _mop_name = [_mop_name]
     # break down mop list of strings in a way to insert in a value sparql statement
-    for label in mop_name:
+    _mop_name = _mop_name  + [ encode_to_iso_8859_1(item) for item in _mop_name ] # add deformed ISO-8859-1 strings in case
+    for label in set(mop_name):
         if label != "N/A" and label != "" and label != " " and label != 'lab':
         # Append each formatted element to the result string
             if '"' in label:
@@ -854,7 +863,12 @@ def transformation_querying(client, mop_name):
     print("mop name: ", mop_name)
     insert_string               = ""    # String to store formatted MOP names for the SPARQL query
     # Iterate over each name in the mop_name list and format it for the query
-    for label in mop_name:
+    _mop_name = mop_name
+    if isinstance(_mop_name, str):
+        _mop_name = [_mop_name]
+    # break down mop list of strings in a way to insert in a value sparql statement
+    _mop_name = _mop_name  + [ encode_to_iso_8859_1(item) for item in _mop_name ] # add deformed ISO-8859-1 strings in case
+    for label in set(mop_name):
         # Append each formatted element to the result string
         if label != "N/A" and label != "" and label != " " and label != 'lab':  # Exclude invalid or unwanted labels
             # Check if the label contains double quotes and format accordingly
