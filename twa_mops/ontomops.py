@@ -857,6 +857,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
     hasMOPFormula: HasMOPFormula[str]
     hasPoreSize: Optional[HasPoreSize[PoreSize]] = None
     hasOuterDiameter: Optional[HasOuterDiameter[om.Diameter]] = None
+    hasCalculationResult: Optional[HasCalculationResult[CalculationResult]] = None
 
     @classmethod
     def from_assemble(
@@ -1104,3 +1105,161 @@ class MetalOrganicPolyhedron(CoordinationCage):
         fig.update_layout(autosize=False, width=1200, height=400)
         fig.show()
         return fig
+
+
+# =============================== #
+#         calculations            #
+# =============================== #
+
+
+# === object properties ===
+HasCalculationMethod    = ObjectProperty.create_from_base('HasCalculationMethod', OntoMOPs)
+HasCalculatedProperty   = ObjectProperty.create_from_base('HasCalculatedProperty', OntoMOPs)
+HasCalculationParameter = ObjectProperty.create_from_base('HasCalculationParameter', OntoMOPs)
+HasCalculationResult = ObjectProperty.create_from_base('HasCalculationResult', OntoMOPs)
+HasOutputGeometry = ObjectProperty.create_from_base('HasOutputGeometry', OntoMOPs)
+HasSoftware = ObjectProperty.create_from_base('HasSoftware', OntoMOPs)
+
+
+# === Data properties ===
+HasName = DatatypeProperty.create_from_base("HasName", OntoMOPs) # could alternatively use rdfs:label but this would then be implicit and not ideal for filter queries
+HasLiteralValue = DatatypeProperty.create_from_base("HasLiteralValue", OntoMOPs)
+HasSoftwareVersion = DatatypeProperty.create_from_base("HasSoftwareVersion", OntoMOPs)
+HasNumericValue = DatatypeProperty.create_from_base("HasNumericValue", OntoMOPs)
+HasLiteralUnit = DatatypeProperty.create_from_base("HasLiteralUnit", OntoMOPs)
+
+# === classes ===
+class Software(BaseClass):
+    """The software package used to run a calculation."""
+    rdfs_isDefinedBy = OntoMOPs
+    hasName: HasName[str] # e.g. "Gaussian16", "LAMMPS"
+    hasSoftwareVersion: HasSoftwareVersion[str]
+
+class CalculationParameter(BaseClass):
+    """One parameter used in a calculation (value + unit)."""
+    rdfs_isDefinedBy = OntoMOPs
+    hasName: HasName[str] # e.g. "cutoff energy"
+
+class NumericCalculationParameter(CalculationParameter):
+    rdfs_isDefinedBy = OntoMOPs
+    hasNumericValue:  HasNumericValue[float]
+    hasLiteralUnit: HasLiteralUnit[str]
+
+class StringCalculationParameter(CalculationParameter):
+    rdfs_isDefinedBy = OntoMOPs
+    hasLiteralValue: HasLiteralValue[str]
+
+class CalculationMethod(BaseClass):
+    """How the calculation was performed."""
+    rdfs_isDefinedBy = OntoMOPs
+    hasCalculationParameter: HasCalculationParameter[CalculationParameter]
+    hasSoftware: HasSoftware[Software]
+
+class CalculatedProperty(BaseClass):
+    """A computed result from the calculation."""
+    rdfs_isDefinedBy = OntoMOPs
+    hasNumericValue:  HasNumericValue[float]
+    hasLiteralUnit: HasLiteralUnit[str]
+    hasName: HasName[str] # e.g. "total energy", "HOMO-LUMO gap"
+
+class CalculationResult(BaseClass):
+    """
+    The result of a calculation
+    """
+    rdfs_isDefinedBy = OntoMOPs
+    hasOutputGeometry: HasOutputGeometry[ontospecies.Geometry]
+    hasCalculationMethod:  HasCalculationMethod[CalculationMethod]
+    hasCalculatedProperty: HasCalculatedProperty[CalculatedProperty]
+
+    @classmethod
+    def from_software_parameters_properties(
+        cls,
+        software: dict,
+        parameters: list,
+        properties: list,
+        output_geometry: ontospecies.Geometry
+    ):
+        """
+        Construct a CalculationResult from raw software metadata, calculation parameters,
+        computed properties, and an output geometry.
+
+        This factory method wraps the given software info in a Software object, converts
+        each entry in `parameters` into either a StringCalculationParameter or
+        NumericCalculationParameter, groups them into a CalculationMethod, then does the
+        same for each entry in `properties` to produce a set of CalculatedProperty objects.
+        Finally it returns a new CalculationResult bundling the geometry, properties, and method.
+
+        Args:
+            software (dict):
+                A dict containing:
+                - "name" (str): the software package name (e.g. "Gaussian").
+                - "version" (str): the software version (e.g. "16").
+            parameters (List[Tuple]):
+                A list of 2- or 3-tuples describing calculation parameters:
+                - (name: str, literal_value: str) for string parameters, or
+                - (name: str, numeric_value: Union[int,float], unit: str) for numeric parameters.
+            properties (List[Tuple]):
+                A list of 3-tuples describing computed properties:
+                - (name: str, numeric_value: Union[int,float], unit: str).
+            output_geometry (ontospecies.Geometry):
+                The geometry object produced by the calculation.
+
+        Returns:
+            CalculationResult:
+                An object containing:
+                - hasOutputGeometry: the provided `output_geometry`
+                - hasCalculatedProperty: a set of CalculatedProperty objects
+                - hasCalculationMethod: a CalculationMethod wrapping the software and its parameters
+
+        Example:
+            >>> geom = ontospecies.Geometry(...)
+            >>> result = CalculationResult.from_software_parameters_properties(
+            ...     software={"name": "Gaussian", "version": "16"},
+            ...     parameters=[
+            ...         ("method", "HF"),
+            ...         ("basis", "6-31G*"),
+            ...         ("thresh", 1e-6, "unitless")
+            ...     ],
+            ...     properties=[
+            ...         ("energy", -75.0234, "hartree"),
+            ...         ("dipole", 1.23, "Debye")
+            ...     ],
+            ...     output_geometry=geom
+            ... )
+        """
+
+        software = Software(
+            hasName=software["name"],
+            hasSoftwareVersion=software["version"],
+        )
+        calc_params=[]
+
+        for param in parameters:
+            if len(param) == 2:
+                calc_params.append(
+                    StringCalculationParameter(hasName=param[0], hasLiteralValue=param[1])
+                )
+            else:
+                calc_params.append(
+                    NumericCalculationParameter(hasName=param[0], hasNumericValue=float(param[1]), hasLiteralUnit=param[2]),
+                )
+
+        calc_method = CalculationMethod(
+            hasSoftware=software,
+            hasCalculationParameter=set(calc_params),
+        )
+
+        properties = []
+        for prop in properties:
+            properties.append(CalculatedProperty(
+                hasName=prop[0],
+                hasNumericValue=prop[1],
+                hasLiteralUnit=prop[2],
+            ))
+
+
+        return CalculationResult(
+            hasOutputGeometry=output_geometry,
+            hasCalculatedProperty=set(properties),
+            hasCalculationMethod=calc_method,
+        )
