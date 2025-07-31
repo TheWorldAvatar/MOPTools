@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from scipy.optimize import fsolve
 from datetime import datetime
 import plotly.express as px
@@ -522,6 +522,177 @@ class GBUCoordinateCenter(CoordinatePoint):
 class CBUAssemblyCenter(CoordinatePoint):
     pass
 
+
+################# Molecular Fragments #################
+
+## Object properties
+HasFragmentType = ObjectProperty.create_from_base('HasFragmentType', OntoMOPs)
+HasMolecularFragment = ObjectProperty.create_from_base('HasMolecularFragment', OntoMOPs)
+
+## Data properties
+HasSmiles = DatatypeProperty.create_from_base('HasSmiles', OntoMOPs)
+HasDummyAtomicNumber = DatatypeProperty.create_from_base('HasDummyAtomicNumber', OntoMOPs)
+HasMolBlock = DatatypeProperty.create_from_base('HasMolBlock', OntoMOPs)
+HasMolecularFormula = DatatypeProperty.create_from_base('HasMolecularFormula', OntoMOPs)
+HasLinkerFragmentOrder = DatatypeProperty.create_from_base('HasLinkerFragmentOrder', OntoMOPs)
+IsLinearFragment = DatatypeProperty.create_from_base('IsLinearFragment', OntoMOPs)
+IsCyclicFragment = DatatypeProperty.create_from_base('IsCyclicFragment', OntoMOPs)
+HasNumDummyAtoms = DatatypeProperty.create_from_base('HasNumDummyAtoms', OntoMOPs)
+HasFragmentOrder = DatatypeProperty.create_from_base('HasFragmentOrder', OntoMOPs)
+
+class FragmentType(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    hasNumDummyAtoms: HasNumDummyAtoms[int] = None
+
+    @property
+    def num_dummy_atoms(self) -> int:
+        return list(self.hasNumDummyAtoms)[0]
+
+class BindingFragment(FragmentType):
+    hasOuterCoordinationNumber: HasOuterCoordinationNumber[int]
+    hasBindingFragment: HasBindingFragment[str]
+    hasNumDummyAtoms: HasNumDummyAtoms[int] = 1
+    hasBindingDirection: HasBindingDirection[BindingDirection]
+
+class NodeFragment(FragmentType):
+    hasNumDummyAtoms: HasNumDummyAtoms[int]
+    
+class LinkerFragment(FragmentType):
+    # Indicates whether the linker fragment is cyclic (True) or acyclic (False).
+    isCyclic: Optional[IsLinearFragment[bool]] = None
+    isLinear: Optional[IsCyclicFragment[bool]] = None
+    hasNumDummyAtoms: HasNumDummyAtoms[int] = 2
+
+    @property
+    def is_linear(self) -> bool:
+        return list(self.isLinear)[0] if self.isLinear else False
+
+    @property
+    def is_cyclic(self) -> bool:
+        return list(self.isCyclic)[0] if self.isCyclic else False
+
+class SideChainFragment(FragmentType):
+    hasNumDummyAtoms: HasNumDummyAtoms[int] = 1
+
+class MolecularFragment(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    hasCharge: ontospecies.HasCharge[ontospecies.Charge]
+    hasMolecularWeight: ontospecies.HasMolecularWeight[ontospecies.MolecularWeight]
+    hasMolecularFormula: HasMolecularFormula[str]
+    hasGeometry: ontospecies.HasGeometry[ontospecies.Geometry]
+    hasFragmentType: HasFragmentType[FragmentType]
+    hasSmiles: HasSmiles[str]
+    hasDummyAtomicNumber: HasDummyAtomicNumber[int]
+
+    @property
+    def charge(self):
+        return list(list(list(self.hasCharge)[0].hasValue)[0].hasNumericalValue)[0]
+
+    @property
+    def molecular_weight(self):
+        return list(list(list(self.hasMolecularWeight)[0].hasValue)[0].hasNumericalValue)[0]
+    
+    @property
+    def molecular_formula(self):
+        return list(self.hasMolecularFormula)[0]
+    
+    @property
+    def smiles(self):
+        return list(self.hasSmiles)[0]
+    
+    @property
+    def is_node_fragment(self):
+        return isinstance(list(self.hasFragmentType)[0], NodeFragment)
+    
+    @property
+    def is_linker_fragment(self):
+        return isinstance(list(self.hasFragmentType)[0], LinkerFragment)
+    
+    @property
+    def is_binding_fragment(self):
+        return isinstance(list(self.hasFragmentType)[0], BindingFragment)   
+    
+    @property
+    def fragment_type(self) -> FragmentType:
+        """
+        Returns the fragment type of the molecular fragment.
+        """
+        return list(self.hasFragmentType)[0]
+    
+    def get_mol_block(self, sparql_client) -> str:
+        """
+        Returns the mol file contents of the molecular fragment.
+        """
+        if hasattr(self, "_mol_block"):
+            return self._mol_block
+        
+        geometry_fpath = list(self.hasGeometry)[0].geometry_file
+        download_fpath = geometry_fpath.split('/')[-1]
+
+        if os.path.exists(geometry_fpath):
+            with open(geometry_fpath, 'r') as f:
+                self._mol_block = f.read()
+        elif os.path.exists(download_fpath):
+            with open(download_fpath, 'r') as f:
+                self._mol_block = f.read()
+        else:
+            sparql_client.download_file(geometry_fpath, download_fpath)
+            with open(download_fpath, 'r') as f:
+                self._mol_block = f.read()
+        
+        return self._mol_block
+
+    
+    @classmethod
+    def from_mol_file(
+        cls, 
+        mol_file_path: str, 
+        fragment_type: FragmentType,
+        dummy_atomic_number: int = 0,
+        **kwargs
+    ) -> 'MolecularFragment':
+        """
+        Create a MolecularFragment instance from a .mol file.
+        This method assumes that the .mol file contains the necessary geometry and properties.
+        """
+        from molecular_fragment_utils import load_molecular_fragment_from_mol_file
+
+        # Load data including charge, molecular weight, molecular formula, atom_data, and smiles from the mol file
+        data = load_molecular_fragment_from_mol_file(
+            mol_file_path,
+            dummy_atomic_number=dummy_atomic_number,
+            **kwargs
+        )
+
+        charge = kwargs.get('charge', data["charge"])
+        
+        # Create a geometry object
+        pts = []
+        for atom in data["atoms"]:
+            pt = Point(
+                x=atom["coordinate_x"],
+                y=atom["coordinate_y"],
+                z=atom["coordinate_z"],
+                label=atom["label"],
+            )
+            pts.append(pt)
+
+        geo = ontospecies.Geometry(
+            hasPoints=pts,
+            hasGeometryFile=mol_file_path,
+        )
+
+        # Create a MolecularFragment instance
+        return cls(
+            instance_iri=cls.init_instance_iri(),
+            hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
+            hasMolecularWeight=ontospecies.MolecularWeight(hasValue=om.Measure(hasNumericalValue=data["molecular_weight"], hasUnit=om.gramPerMole)),
+            hasMolecularFormula=data["molecular_formula"],
+            hasGeometry=geo,
+            hasFragmentType=fragment_type,
+            hasSmiles=data["smiles"],
+            hasDummyAtomicNumber=dummy_atomic_number,
+        )
 class ChemicalBuildingUnit(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
     hasBindingDirection: HasBindingDirection[BindingDirection]
