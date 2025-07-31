@@ -693,6 +693,232 @@ class MolecularFragment(BaseClass):
             hasSmiles=data["smiles"],
             hasDummyAtomicNumber=dummy_atomic_number,
         )
+    
+
+############## ChemicalBuildingUnit Template ##############
+# class MolecularFragmentTemplate(BaseClass):
+#     hasOrder : HasFragmentOrder[int]
+#     hasConstraint : HasFragmentOrder[str]
+## Object properties
+HasFragmentConstraint = ObjectProperty.create_from_base('HasFragmentConstraint', OntoMOPs)
+# HasFragmentPositions = ObjectProperty.create_from_base('HasFragmentPositions', OntoMOPs)
+HasCBUFragmentTemplate = ObjectProperty.create_from_base('HasCBUFragmentTemplate', OntoMOPs)
+HasChemicalBuildingUnitTemplate = ObjectProperty.create_from_base('HasChemicalBuildingUnitTemplate', OntoMOPs)
+HasChemicalBuildingUnitFragment = ObjectProperty.create_from_base('HasChemicalBuildingUnitFragment', OntoMOPs)
+
+## Data properties
+HasFragmentPositions = DatatypeProperty.create_from_base('HasFragmentPositions', OntoMOPs)
+
+# class FragmentConstraint(BaseClass):
+#     """
+#     Abstract rule that must be satisfied by a MolecularFragment
+#     before it may occupy a given FragmentPosition.
+#     """
+#     rdfs_isDefinedBy = OntoMOPs
+
+#     def is_satisfied_by(self, frag: MolecularFragment) -> bool:
+#         raise NotImplementedError
+
+#     # small helper that yields a readable message for failed checks
+#     def complain(self, frag: MolecularFragment, slot_key: str) -> str:   # <- MAY override
+#         return (f"Fragment {frag.instance_iri} does not satisfy "
+#                 f"{self.__class__.__name__} at slot '{slot_key}'.")
+
+class CBUFragmentTemplate(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    hasFragmentType: HasFragmentType[FragmentType]
+    hasFragmentPositions: HasFragmentPositions[int] # really only required for linkers
+    # hasConstraint: HasFragmentConstraint[FragmentConstraint] = None
+    
+    # @property
+    # def required_type(self) -> FragmentType:
+    #     return list(self.hasFragmentType)[0]
+    
+    @property
+    def allowed_types(self) -> tuple[FragmentType, ...]:
+        """All fragment classes that fulfil this slot."""
+        return tuple(self.hasFragmentType)
+    
+    def accepts(self, frag: "MolecularFragment") -> bool:
+        # return frag.hasFragmentType in self.allowed_types
+        if frag.hasFragmentType & self.hasFragmentType:
+            return True
+        else:
+            return False
+
+    @property
+    def is_linker_slot(self) -> bool:
+        return any(isinstance(t, LinkerFragment) for t in self.allowed_types)
+
+    @property
+    def is_binding_slot(self) -> bool:
+        return any(isinstance(t, BindingFragment) for t in self.allowed_types)
+    
+    @property
+    def is_node_slot(self) -> bool:
+        return any(isinstance(t, NodeFragment) for t in self.allowed_types)
+
+
+class ChemicalBuildingUnitTemplate(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    # hasModularity: HasModularity[int]
+    # hasPlanarity: HasPlanarity[str]
+    # hasGenericBuildingUnit: HasGenericBuildingUnit[GenericBuildingUnit]
+    hasGenericBuildingUnitType: HasGBUType[GenericBuildingUnitType]
+    # hasLinkerFragmentOrder: HasFragmentOrder[str]
+    hasCBUFragmentTemplate: HasCBUFragmentTemplate[CBUFragmentTemplate]
+
+    @property
+    def gbu_type(self):
+        return list(self.hasGenericBuildingUnitType)[0].label
+        # return list(list(self.hasGenericBuildingUnit)[0].hasGBUType)[0].label
+
+    @property
+    def all_allowed_types(self) -> Set[FragmentType]:
+        """
+        Returns a set of all fragment types that are allowed in this template.
+        This includes all types from all CBUFragmentTemplates.
+        """
+        return {ft for slot in self.hasCBUFragmentTemplate for ft in slot.allowed_types}
+    
+    # @property
+    # def linker_fragment_order(self):
+    #     return list(self.hasLinkerFragmentOrder)[0]
+
+    # @property
+    # def linker_fragment_order(self) -> List[str]:
+    #     """
+    #     Returns the order of linker fragments as a list of strings.
+    #     This is derived from the hasCBUFragmentTemplate property.
+    #     """
+    #     return [
+    #         template for template in list(self.hasCBUFragmentTemplate)
+    #         if isinstance(template.required_type, LinkerFragment)
+    #     ]
+    
+    # @property
+    # def linker_fragment_order(self) -> List[str]:
+    #     """
+    #     Returns the order of linker fragments as a list of strings.
+    #     This is derived from the hasCBUFragmentTemplate property.
+    #     """
+    #     linker_templates = [
+    #         template for template in list(self.hasCBUFragmentTemplate)
+    #         if isinstance(template.required_type, LinkerFragment)
+    #     ]
+
+    #     positions = {
+    #         pos: template.required_type for template in linker_templates
+    #         for pos in template.hasFragmentPositions
+    #     }
+
+    #     return [ required_type for _, required_type in sorted(positions.items(), key=lambda x:x[0]) ]
+
+    @property
+    def linker_fragment_order(self) -> Dict[int, Set[FragmentType]]:
+        """
+        For every template position that belongs to a *linker*-slot, return the
+        **set** of all fragment classes permitted there.
+
+        Example
+        -------
+        {0: {CarboxylateLinker, PyridylLinker},
+         2: {CarboxylateLinker}}
+        """
+        from collections import defaultdict
+        # pos2types: Dict[int, Set[FragmentType]] = defaultdict(set)
+        pos2types = defaultdict(set)
+
+        for slot in self.hasCBUFragmentTemplate:
+            if slot.is_linker_slot:                     # helper from last update
+                for pos in slot.hasFragmentPositions:
+                    pos2types[pos].update(slot.allowed_types)
+
+        # sort for determinism – caller can still rely on order if desired
+        return dict(sorted(pos2types.items()))
+    
+    @classmethod
+    def validate_template(cls, template):
+        """
+        check that has one binding group required and the positions of different fragments are not overlapping
+        """
+        if not template.hasCBUFragmentTemplate:
+            raise ValueError("ChemicalBuildingUnitTemplate must have at least one CBUFragmentTemplate.")
+        
+        # Check that there is at least one binding fragment
+        binding_fragments = [f for f in template.hasCBUFragmentTemplate if f.is_binding_slot]
+        if not binding_fragments:
+            raise ValueError("ChemicalBuildingUnitTemplate must have at least one binding fragment.")
+
+        # Check that positions are unique
+        all_positions = [pos for f in template.hasCBUFragmentTemplate for pos in f.hasFragmentPositions]
+        if len(all_positions) != len(set(all_positions)):
+            raise ValueError("ChemicalBuildingUnitTemplate has overlapping fragment positions.")
+        
+        return True
+
+        
+
+    def validate_fragment_list(self, fragments: List[MolecularFragment]) -> bool:
+        """
+        Validate the template against the provided fragments.
+        This method checks if the fragments match the required types and positions defined in the template.
+        """
+
+        # ------------------------------------------------------------------
+        # 1) every template slot must be satisfied and vice-versa
+        for slot in self.hasCBUFragmentTemplate:
+            if not any(slot.accepts(f) for f in fragments):
+                return False
+        if not all(any(slot.accepts(f) for slot in self.hasCBUFragmentTemplate)
+                   for f in fragments):
+            return False
+        # ------------------------------------------------------------------
+        # 2) linker-position check using the new “sets” mapping
+        linker_sets = self.linker_fragment_order            # {pos: {types…}}
+        for pos, allowed in linker_sets.items():
+            if pos >= len(fragments):                       # fragment missing
+                return False
+            frag = fragments[pos]
+            if not frag.is_linker_fragment:                 # wrong kind of frag
+                return False
+            if frag.hasFragmentType not in allowed:         # not in allowed set
+                return False
+        # ------------------------------------------------------------------
+        return True
+
+        # # check that the set of frag types matches the set of frag types in the template
+        # required_types = {f.required_type for f in list(self.hasCBUFragmentTemplate)}
+        # provided_types = {frag.hasFragmentType for frag in fragments}
+        # if required_types != provided_types:
+        #     # raise ValueError(f"Provided fragments do not match the required types: {required_types} != {provided_types}")
+        #     return False
+        
+        # linker_fragment_order = self.linker_fragment_order
+        # # check that the linker fragment order matches the provided fragments
+        # if linker_fragment_order:
+        #     # provided_linker_fragments = [f for f in fragments if f.is_linker_fragment]
+        #     provided_linker_types = [f.hasFragmentType for f in fragments if f.is_linker_fragment]
+        #     if linker_fragment_order != provided_linker_types:
+        #         # raise ValueError(f"Provided linker fragments do not match the required order: {linker_fragment_order} != {provided_linker_types}")
+        #         return False
+        
+        # for the linker fragments, check that the fragment types at each position/index match
+        # for template in list(self.hasCBUFragmentTemplate):
+        #     for pos in template.hasFragmentPositions:
+        #         if pos >= len(fragments) or fragments[pos].hasFragmentType != template.required_type:
+        #             return False
+                
+                # if pos >= len(fragments):
+                #     raise ValueError(f"Fragment position {pos} exceeds the number of provided fragments {len(fragments)}.")
+                # frag = fragments[pos]
+                # if frag.hasFragmentType != template.required_type:
+                #     raise ValueError(f"Fragment at position {pos} does not match the required type: {frag.hasFragmentType} != {template.required_type}")
+        # return True
+        
+
+        
+
 
 class ChemicalBuildingUnitFragment(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
@@ -714,7 +940,9 @@ class ChemicalBuildingUnit(BaseClass):
     hasCBUFormula: HasCBUFormula[str]
     hasCBUAssemblyCenter: HasCBUAssemblyCenter[CBUAssemblyCenter]
 
+    # hasMolecularFragment: Optional[HasMolecularFragment[MolecularFragment]] = None
     hasChemicalBuildingUnitFragment: Optional[HasChemicalBuildingUnitFragment[ChemicalBuildingUnitFragment]] = None
+    hasChemicalBuildingUnitTemplate: Optional[HasChemicalBuildingUnitTemplate[ChemicalBuildingUnitTemplate]] = None
     hasSmiles: Optional[HasSmiles[str]] = None
 
     @property
