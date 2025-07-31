@@ -460,6 +460,11 @@ class DirectBinding(BindingDirection):
 class SidewayBinding(BindingDirection):
     pass
 
+
+DIRECT_BINDING = DirectBinding(
+    instance_iri=OntoMOPs.namespace_iri + '/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a'
+)
+
 class GBUConnectingPoint(CoordinatePoint):
     pass
 
@@ -1085,7 +1090,7 @@ class ChemicalBuildingUnit(BaseClass):
         return cls(
             instance_iri=cbu_iri,
             # TODO hasBindingDirection should be modified once side-binding is implemented
-            hasBindingDirection='https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
+            hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
             hasBindingSite=binding_sides,
             isFunctioningAs=gbu if gbu is not None else set(),
             hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
@@ -1094,26 +1099,175 @@ class ChemicalBuildingUnit(BaseClass):
             hasCBUFormula=cbu_formula,
             hasCBUAssemblyCenter=assemb_center
         )
+    
+    
+    
+    @classmethod
+    def from_molecular_fragments(
+        cls,
+        fragments: List[MolecularFragment],
+        gbu_type: str,
+        gbu: Optional[GenericBuildingUnit] = None,
+        direct_binding: bool = True,
+        metal_site: bool = False,
+        **kwargs
+    ) -> 'ChemicalBuildingUnit':
+        from molecular_fragment_utils import assemble_fragments_to_cbu
+
+        binding_fragments = [f for f in fragments if f.is_binding_fragment]
+        linker_fragments = [f for f in fragments if f.is_linker_fragment]
+        node_fragments = [f for f in fragments if f.is_node_fragment]
+
+        cbu_frags = [
+            ChemicalBuildingUnitFragment(
+                hasMolecularFragment=frag,
+                hasFragmentPositions=[i for i in range(len(fragments)) if fragments[i] == frag]
+            ) for frag in set(fragments)
+        ]
+
+        if not direct_binding:
+            raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
+        if not binding_fragments: # what if wanted to assemble only linker and node fragments e.g. 4-planar cores? wouldnt' be a cbu, use the frag util functions, same for substituting frags
+            raise ValueError("The list of binding fragments is empty.")
+        # if not linker_fragments and not node_fragments:
+        #     raise ValueError("At least one linker or node fragment is required.")
+
+        # TODO: reset all fragments to have the same dummy atomic number (maybe when load from mol file)
+        dummy_atomic_number = {list(x.hasDummyAtomicNumber)[0] for x in fragments}
+        if len(dummy_atomic_number) != 1:
+            raise ValueError("Currently all fragments must have the same dummy atomic number.")
+        
+        dummy_atomic_number = list(dummy_atomic_number)[0]
+        
+        binding_group = binding_fragments[0]
+        ocn = list(binding_group.fragment_type.hasOuterCoordinationNumber)[0]
+        binding_atoms = list(binding_group.fragment_type.hasBindingFragment)[0]
+
+        # TODO
+        # return smiles and use binding frag to get binding atoms
+        cbu_json, cbu_smiles, cbu_formula, cbu_mol_block = assemble_fragments_to_cbu(
+            linker_mol_files=[list(x.hasGeometry)[0].geometry_file for x in linker_fragments],
+            binding_group_mol_files = [list(x.hasGeometry)[0].geometry_file for x in binding_fragments][0],
+            node_mol_files = [list(x.hasGeometry)[0].geometry_file for x in node_fragments][0] if node_fragments else None,
+            dummy_atomic_number=dummy_atomic_number,
+            **kwargs
+        )
+
+        cbu_charge = 0
+        cbu_mw = 0
+        # cbu_formula = ''
+        
+        for frag in fragments:
+            cbu_charge += frag.charge
+            cbu_mw += frag.molecular_weight
+        #     if frag.is_binding_fragment and not node_fragments:
+        #         cbu_formula += f'({frag.molecular_formula})2'
+        #     else:
+        #         cbu_formula += f'({frag.molecular_formula})'
+
+
+        # if gbu_type == GBU_TYPE_2_LINEAR:
+        #     pass
+
+        binding_sites, assemb_center, atom_points = cls.process_geometry_json(
+            cbu_json, 
+            ocn, 
+            binding_atoms, 
+            gbu_type, 
+            metal_site
+        )
+        
+        # prepare the geometry of the CBU   
+        cbu_iri = cls.init_instance_iri()
+        cbu_xyz_file = f"{cbu_iri.split('/')[-1]}.xyz"
+        cbu_geo = ontospecies.Geometry.from_points(atom_points, cbu_xyz_file)
+
+        # geometry = []
+        # for atom in cbu_mol.GetAtoms():
+        #     pos = cbu_mol.GetConformer().GetAtomPosition(atom.GetIdx())
+        #     geometry.append(Point(x=pos.x, y=pos.y, z=pos.z, label=atom.GetSymbol()))
+        # cbu_geo = ontospecies.Geometry(
+        #     hasGeometryFile=None,  # TODO: handle geometry file if needed
+        #     hasPoints=geometry,
+        # )
+        
+
+        # for fra
+            
+        # instantiate actual CBU
+        return cls(
+            instance_iri=cls.init_instance_iri(),
+            # TODO hasBindingDirection should be modified once side-binding is implemented
+            hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
+            hasBindingSite=binding_sites,
+            isFunctioningAs=gbu if gbu is not None else set(),
+            hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=cbu_charge, hasUnit=om.elementaryCharge)),
+            hasMolecularWeight=ontospecies.MolecularWeight(hasValue=om.Measure(hasNumericalValue=cbu_mw, hasUnit=om.gramPerMole)),
+            hasGeometry=cbu_geo,
+            hasCBUFormula=cbu_formula,
+            hasCBUAssemblyCenter=assemb_center,
+            hasChemicalBuildingUnitFragment=cbu_frags,
+            hasSmiles=cbu_smiles,
+            # hasMolecularFragment= linker_fragments + binding_fragments + node_fragments, # [*linker_fragments, *binding_fragments, *node_fragments],
+        )
 
     @classmethod
-    def from_geometry_xyz(cls, cbu_formula, cbu_xyz_fpath, charge, ocn, binding_fragment, gbu_type, gbu: str = None, direct_binding: bool = True, metal_site: bool = False):
+    def combinations_from_template_and_fragments(
+        cls,
+        template: ChemicalBuildingUnitTemplate,
+        fragments: List[MolecularFragment],
+        unique_only=True,
+    ) -> List[ChemicalBuildingUnit]:
         """
-        The passed `cbu_xyz_fpath` should be the path to the XYZ file containing the coordinates of the CBU, as well as dummy atoms labelled using 'X'.
+        Create all ChemicalBuildingUnit instances from the given fragments.
+        This method will iterate through the template positions and match the fragments to the required types.
         """
-        print(cls.process_xyz_to_json(cbu_xyz_fpath))
-        print(json.loads(cls.process_xyz_to_json(cbu_xyz_fpath)))
+        from itertools import product
 
-        return cls.from_geometry_json(
-            cbu_formula=cbu_formula,
-            cbu_json=json.loads(cls.process_xyz_to_json(cbu_xyz_fpath)),
-            charge=charge,
-            ocn=ocn,
-            binding_fragment=binding_fragment,
-            gbu_type=gbu_type,
-            gbu=gbu,
-            direct_binding=direct_binding,
-            metal_site=metal_site
-        )
+        cbus = []
+        unique_smiles = []
+
+        frag_templates = sorted([ 
+            frag_template for frag_template in template.hasCBUFragmentTemplate 
+        ], key=lambda x: min(x.hasFragmentPositions))
+
+        fragment_lists = [
+            [f for f in fragments if frag_template.accepts(f)] 
+            for frag_template in frag_templates
+        ]
+
+        if any(len(fl) == 0 for fl in fragment_lists):
+            raise ValueError("unfullilled template positions, fragments do not match all required types.")
+
+        total_combinations = 0
+        for combo in product(*fragment_lists):
+
+            # create the linker fragments array by going through the linker templates and putting the linker fragments in the correct order
+            fragment_positions = {}
+
+            for frag, frag_template in zip(combo, frag_templates):
+                for pos in frag_template.hasFragmentPositions:
+                    fragment_positions[pos] = frag
+
+            ordered_fragments = [frag for _, frag in sorted(fragment_positions.items())]
+
+            cbu = ChemicalBuildingUnit.from_molecular_fragments(
+                fragments=ordered_fragments,
+                gbu_type=template.gbu_type,
+            )
+            smiles = list(cbu.hasSmiles)[0]
+            if unique_only and smiles in unique_smiles:
+                continue
+            unique_smiles.append(smiles)
+            # if not unique_only or smiles not in unique_smiles:
+            cbu.hasChemicalBuildingUnitTemplate = {template}
+
+            cbus.append(cbu)
+            total_combinations += 1
+
+        return cbus
+
+
 
     @property
     def vector_to_binding_site_plane(self):
