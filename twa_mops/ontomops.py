@@ -693,6 +693,16 @@ class MolecularFragment(BaseClass):
             hasSmiles=data["smiles"],
             hasDummyAtomicNumber=dummy_atomic_number,
         )
+
+class ChemicalBuildingUnitFragment(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    hasMolecularFragment: HasMolecularFragment[MolecularFragment]
+    hasFragmentPositions: HasFragmentPositions[int]
+    # isFunctioningAs: IsFunctioningAs[CBUFragmentPosition]
+    
+####################################################
+
+
 class ChemicalBuildingUnit(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
     hasBindingDirection: HasBindingDirection[BindingDirection]
@@ -703,6 +713,9 @@ class ChemicalBuildingUnit(BaseClass):
     hasGeometry: ontospecies.HasGeometry[ontospecies.Geometry]
     hasCBUFormula: HasCBUFormula[str]
     hasCBUAssemblyCenter: HasCBUAssemblyCenter[CBUAssemblyCenter]
+
+    hasChemicalBuildingUnitFragment: Optional[HasChemicalBuildingUnitFragment[ChemicalBuildingUnitFragment]] = None
+    hasSmiles: Optional[HasSmiles[str]] = None
 
     @property
     def charge(self):
