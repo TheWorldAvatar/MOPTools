@@ -109,6 +109,7 @@ def create_swapped_dummy_atoms_mol(
 
 
 
+
 def load_molecular_fragment_from_mol_file(
     mol_file_path: str,
     dummy_atomic_number: int = 0,
@@ -187,6 +188,41 @@ def load_molecular_fragment_from_mol_file(
         'smiles': smiles,
     }
 
+
+def _get_local_frame(conf, mol: Chem.Mol, dummy_idx: int, nbr_idx: int):
+    """
+    Build a right-handed orthonormal frame at the neighbour atom:
+      origin = coords[nbr_idx]
+      e1 = (coords[dummy_idx] - coords[nbr_idx]) normalized
+      pick any other atom bonded to nbr_idx (≠ dummy_idx) as nbr2_idx
+      temp = coords[nbr2_idx] - coords[nbr_idx]
+      e2 = (temp - (temp·e1)e1) normalized
+      e3 = e1 × e2
+    Returns (origin, 3×3 matrix [e1,e2,e3]).
+    """
+    # 1) positions
+    pos = lambda i: np.array(conf.GetAtomPosition(i))
+    o = pos(nbr_idx)
+    # 2) first axis: neighbour → dummy
+    v1 = pos(dummy_idx) - o
+    e1 = v1 / np.linalg.norm(v1)
+    # 3) find a second neighbour of nbr_idx
+    nbr2_idx = None
+    for b in mol.GetAtomWithIdx(nbr_idx).GetBonds():
+        idx = b.GetOtherAtomIdx(nbr_idx)
+        if idx != dummy_idx:
+            nbr2_idx = idx
+            break
+    if nbr2_idx is None:
+        raise ValueError(f"No second neighbour found for atom {nbr_idx}")
+    # 4) second axis: project out component along e1
+    v_temp = pos(nbr2_idx) - o
+    v2 = v_temp - np.dot(v_temp, e1) * e1
+    e2 = v2 / np.linalg.norm(v2)
+    # 5) third axis
+    e3 = np.cross(e1, e2)
+    return o, np.vstack((e1, e2, e3)).T
+
     
 
 def reset_dummy_atom_atomic_numbers(mol: Chem.Mol, atomic_number: int):
@@ -248,48 +284,42 @@ def reassemble_two_fragments(
 
     # Choose bond type to add
     bond_to_add = bond_type1 if bond_type1 == bond_type2 else bond_type1
+    
+    pt = rdchem.GetPeriodicTable()
+    r1 = pt.GetRcovalent(frag1.GetAtomWithIdx(h1_idx).GetAtomicNum())
+    r2 = pt.GetRcovalent(frag2.GetAtomWithIdx(h2_idx).GetAtomicNum())
+    target_dist = (r1 + r2) #/ 2.0
 
-    # 3) Get 3D coords
+    # 3) Build a local frame [e1,e2,e3] at each dummy‐neighbour, and their origins.
     conf1 = frag1.GetConformer()
     conf2 = frag2.GetConformer()
+    o1, F1 = _get_local_frame(conf1, frag1, d1_idx, h1_idx)
+    o2, F2 = _get_local_frame(conf2, frag2, d2_idx, h2_idx)
 
-    D2_pos = np.array(conf2.GetAtomPosition(d2_idx))
-    H2_pos = np.array(conf2.GetAtomPosition(h2_idx))
-    H1_pos = np.array(conf1.GetAtomPosition(h1_idx))
-    D1_pos = np.array(conf1.GetAtomPosition(d1_idx))
+    # 4) reverse the first axis on frag2 so e1_2 → -e1_2
+    F2[:, 0] *= -1
 
-    # P_src = np.vstack([D2_pos, H2_pos])
-    # P_dst = np.vstack([H1_pos, D1_pos])
+    rotation_angle = 0
+    if abs(rotation_angle) > 1e-8:
+        phi = np.deg2rad(rotation_angle)
+        e2 = F2[:, 1].copy()
+        e3 = F2[:, 2].copy()
+        # right‐hand rule around e1: 
+        F2[:, 1] =  np.cos(phi) * e2 + np.sin(phi) * e3
+        F2[:, 2] = -np.sin(phi) * e2 + np.cos(phi) * e3
+
+    # 5) rotation that takes frame2 into frame1: R = F1 · F2^T
+    R = F1 @ F2.T
 
     pt = rdchem.GetPeriodicTable()
     r1 = pt.GetRcovalent(frag1.GetAtomWithIdx(h1_idx).GetAtomicNum())
     r2 = pt.GetRcovalent(frag2.GetAtomWithIdx(h2_idx).GetAtomicNum())
     target_dist = (r1 + r2) #/ 2.0
 
-    #    determine the unit vector from H1 -> D1
-    v = D1_pos - H1_pos
-    norm_v = np.linalg.norm(v)
-    if norm_v < 1e-6:
-        raise ValueError("Dummy and neighbor in frag1 are coincident; cannot set bond length.")
-    v_unit = v / norm_v
+    # 6) translation to bring origins to o1
+    # t = o1 - R.dot(o2) # overlapping origins
+    t = (o1 + F1[:, 0] * target_dist) - R.dot(o2)
 
-    #    place the target position for frag2's neighbor (H2) at H1_pos + target_dist * v_unit
-    D1_target = H1_pos + v_unit * target_dist
-
-    v = D2_pos - H2_pos
-    norm_v = np.linalg.norm(v)
-    if norm_v < 1e-6:
-        raise ValueError("Dummy and neighbor in frag1 are coincident; cannot set bond length.")
-    v_unit = v / norm_v
-
-    #    place the target position for frag2's neighbor (H2) at H1_pos + target_dist * v_unit
-    D2_target = H2_pos + v_unit * target_dist
-
-    P_src = np.vstack([D2_target, H2_pos])
-    P_dst = np.vstack([H1_pos, D1_target])
-
-    # 4) Compute transform
-    R, t = _compute_rigid_transform(P_src, P_dst)
 
     # 5) Apply (R, t) to all atoms in frag2
     new_conf2 = Chem.Conformer(frag2.GetNumAtoms())
