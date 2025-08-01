@@ -9,8 +9,42 @@ from scipy.optimize import minimize
 PERIODIC_TABLE = rdchem.GetPeriodicTable()
 
 
-def load_molecular_fragment_from_mol_file(
+def is_asymmetric_dummy_atoms(smiles: str, dummy_atomic_number: int = 0) -> bool:
+    """
+    Given a SMILES string, check if it contains exactly two dummy atoms (atomicNum == 0)
+    and whether they are asymmetric based on their connectivity.
+    Returns True if asymmetric, False if symmetric or not applicable.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    dummy_atoms = [
+        atom.GetIdx() 
+        for atom in mol.GetAtoms() 
+        if atom.GetAtomicNum() == dummy_atomic_number
+    ]
+    if len(dummy_atoms) != 2:
+        return False
+
+    d1, d2 = dummy_atoms
+    # Create two temporary copies to assign atom maps and generate SMILES
+    tmp1 = Chem.Mol(mol)
+    for atom in tmp1.GetAtoms():
+        atom.SetAtomMapNum(0)
+    tmp1.GetAtomWithIdx(d1).SetAtomMapNum(1)
+    tmp1.GetAtomWithIdx(d2).SetAtomMapNum(2)
+    smiles1 = Chem.MolToSmiles(tmp1, isomericSmiles=True)
+
+    tmp2 = Chem.Mol(mol)
+    for atom in tmp2.GetAtoms():
+        atom.SetAtomMapNum(0)
+    tmp2.GetAtomWithIdx(d1).SetAtomMapNum(2)
+    tmp2.GetAtomWithIdx(d2).SetAtomMapNum(1)
+    smiles2 = Chem.MolToSmiles(tmp2, isomericSmiles=True)
+    
+    return not smiles1 == smiles2
+
+def create_swapped_dummy_atoms_mol(
     mol_file_path: str,
+    swapped_file_path: str,
     dummy_atomic_number: int = 0,
     # sanitize: bool = False,
 ) -> dict:
@@ -25,7 +59,7 @@ def load_molecular_fragment_from_mol_file(
       - atom_data
       - smiles
     """
-    # import pdb; pdb.set_trace()
+
     if not os.path.exists(mol_file_path):
         raise FileNotFoundError(f"The file {mol_file_path} does not exist.")
     
@@ -34,16 +68,75 @@ def load_molecular_fragment_from_mol_file(
     if mol is None:
         raise ValueError(f"Failed to load molecule from {mol_file_path}.")
     
-    # if dummy_atomic_number != 0:
-    #     mol = reset_dummy_atom_atomic_numbers(mol, dummy_atomic_number)
+    dummy_atoms = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() == dummy_atomic_number]
+    if len(dummy_atoms) != 2:
+        raise ValueError("Not exactly two dummy atoms")
     
-    # 1) charge
-    # if explicit_charge is not None:
-    #     charge = explicit_charge
-    # else:
+    # swap dummy atom indices
+    d1, d2 = dummy_atoms
+    new_order = list(range(mol.GetNumAtoms()))
+    new_order[d1], new_order[d2] = new_order[d2], new_order[d1]
+    
+    mol = Chem.RenumberAtoms(mol, new_order)
+
+    Chem.MolToMolFile(
+        mol,
+        swapped_file_path,
+    )
+
+    conf = mol.GetConformer()
+
+    atoms = []
+    for atom in mol.GetAtoms():
+        pos = conf.GetAtomPosition(atom.GetIdx())
+        atoms.append({
+            'label': atom.GetSymbol(),
+            'coordinate_x': pos.x,
+            'coordinate_y': pos.y,
+            'coordinate_z': pos.z,
+        })
+
+    smiles = Chem.MolToSmiles(
+        Chem.RemoveHs(mol),
+        canonical=True
+    )
+
+    return {
+        'mol': mol,
+        'atoms': atoms,
+        'smiles': smiles,
+    }
+
+
+
+def load_molecular_fragment_from_mol_file(
+    mol_file_path: str,
+    dummy_atomic_number: int = 0,
+    check_asymmetry: bool = False,
+    # sanitize: bool = False,
+) -> dict:
+    """
+    Load a molecule from a .mol file and compute all of the
+    properties needed to build a MolecularFragment.
+    Returns a dict with keys:
+      - mol
+      - charge
+      - molecular_weight
+      - molecular_formula
+      - atom_data
+      - smiles
+    """
+
+    if not os.path.exists(mol_file_path):
+        raise FileNotFoundError(f"The file {mol_file_path} does not exist.")
+    
+    mol = Chem.MolFromMolFile(mol_file_path, removeHs=False, sanitize=False)
+    mol.UpdatePropertyCache(strict=False)
+    if mol is None:
+        raise ValueError(f"Failed to load molecule from {mol_file_path}.")
+    
     charge = Chem.GetFormalCharge(mol)
 
-    ###########
     molecular_weight = 0
     element_counts = {
         PERIODIC_TABLE.GetElementSymbol(z): 0
@@ -67,27 +160,7 @@ def load_molecular_fragment_from_mol_file(
         n = element_counts[elem]
         molecular_formula += f"{elem}{n if n>1 else ''}"
 
-    #############
-    # dummy = Chem.MolFromSmarts(f'[#{dummy_atomic_number}]')
-    # mol = reset_dummy_atom_atomic_numbers(mol, dummy_atomic_number)
 
-    # molecular_weight = Descriptors.MolWt(mol)
-    # molecular_formula = rdMolDescriptors.CalcMolFormula(
-    #     Chem.DeleteSubstructs(mol, Chem.MolFromSmarts('[#0]'))
-    # ) 
-
-    # dummy = Chem.MolFromSmarts(f'[#{dummy_atomic_number}]')
-    # no_dummy_mol = Chem.Mol(mol)
-    # no_dummy_mol = Chem.DeleteSubstructs(
-    #     no_dummy_mol,
-    #     dummy,
-
-    # )
-    # dummy = Chem.MolFromSmarts('[#0]')
-
-    # molecular_weight = Descriptors.MolWt(no_dummy_mol)
-    # molecular_formula = rdMolDescriptors.CalcMolFormula(no_dummy_mol)
-    
     conf = mol.GetConformer()
 
     atoms = []
@@ -104,7 +177,7 @@ def load_molecular_fragment_from_mol_file(
         Chem.RemoveHs(mol),
         canonical=True
     )
-    
+
     return {
         'mol': mol,
         'charge': charge,
@@ -113,146 +186,96 @@ def load_molecular_fragment_from_mol_file(
         'atoms': atoms,
         'smiles': smiles,
     }
-    
-    
-    
-    
-    
-    
-    # if not os.path.exists(mol_file_path):
-    #     raise FileNotFoundError(f"The file {mol_file_path} does not exist.")
-    
-    # mol = Chem.MolFromMolFile(mol_file_path, removeHs=False, sanitize=False)
-    # if mol is None:
-    #     raise ValueError(f"Failed to load molecule from {mol_file_path}.")
-    
-    # # 1) charge
-    # # if explicit_charge is not None:
-    # #     charge = explicit_charge
-    # # else:
-    # charge = Chem.GetFormalCharge(mol)
-
-    
-    # no_dummy_mol = Chem.Mol(mol).DeleteSubstructs(
-    #     Chem.MolFromSmarts(f'[#{dummy_atomic_number}]')
-    # )
-    # # dummy = Chem.MolFromSmarts('[#0]')
-
-    # molecular_weight = Descriptors.MolWt(no_dummy_mol)
-    # molecular_formula = rdMolDescriptors.CalcMolFormula(no_dummy_mol)
 
 
+# def load_molecular_fragment_from_mol_file(
+#     mol_file_path: str,
+#     dummy_atomic_number: int = 0,
+#     check_asymmetry: bool = False,
+#     # sanitize: bool = False,
+# ) -> dict:
+#     """
+#     Load a molecule from a .mol file and compute all of the
+#     properties needed to build a MolecularFragment.
+#     Returns a dict with keys:
+#       - mol
+#       - charge
+#       - molecular_weight
+#       - molecular_formula
+#       - atom_data
+#       - smiles
+#     """
 
+#     if not os.path.exists(mol_file_path):
+#         raise FileNotFoundError(f"The file {mol_file_path} does not exist.")
+    
+#     mol = Chem.MolFromMolFile(mol_file_path, removeHs=False, sanitize=False)
+#     mol.UpdatePropertyCache(strict=False)
+#     if mol is None:
+#         raise ValueError(f"Failed to load molecule from {mol_file_path}.")
+    
+#     charge = Chem.GetFormalCharge(mol)
 
+#     molecular_weight = 0
+#     element_counts = {
+#         PERIODIC_TABLE.GetElementSymbol(z): 0
+#         for z in {a.GetAtomicNum() for a in mol.GetAtoms()} 
+#         if z != dummy_atomic_number
+#     }
+#     for atom in mol.GetAtoms():
+#         Z = atom.GetAtomicNum()
+#         if Z == dummy_atomic_number:
+#             continue
+#         elem_sym = PERIODIC_TABLE.GetElementSymbol(Z)
+#         element_counts[elem_sym] += 1
+#         molecular_weight += atom.GetMass()
     
-    # # 2) molecular weight & formula (skip dummy atoms)
-    # # calculate molecular weight excluding dummy atoms
-    # # molecular_weight = 0
-    # # element_counts = {
-    # #     PERIODIC_TABLE.GetElementSymbol(z): 0
-    # #     for z in {a.GetAtomicNum() for a in mol.GetAtoms()} 
-    # # }
-    # # for atom in mol.GetAtoms():
-    # #     Z = atom.GetAtomicNum()
-    # #     if Z == dummy_atomic_number:
-    # #         continue
-    # #     elem_sym = PERIODIC_TABLE.GetElementSymbol(Z)
-    # #     element_counts[elem_sym] += 1
-    # #     molecular_weight += atom.GetMass()
-    
-    # # molecular_formula = ""
-    # # for elem in ('C','H','N','O'):
-    # #     if elem in element_counts:
-    # #         n = element_counts.pop(elem)
-    # #         s += f"{elem}{n if n>1 else ''}"
-    # # for elem in sorted(element_counts):
-    # #     n = element_counts[elem]
-    # #     s += f"{elem}{n if n>1 else ''}"
+#     molecular_formula = ""
+#     for elem in ('C','H','N','O'):
+#         if elem in element_counts:
+#             n = element_counts.pop(elem)
+#             molecular_formula += f"{elem}{n if n>1 else ''}"
+#     for elem in sorted(element_counts):
+#         n = element_counts[elem]
+#         molecular_formula += f"{elem}{n if n>1 else ''}"
 
-    
-    # # for elem in ['C', 'H', 'N', 'O']:
-    # #     if elem in element_counts:
-    # #         if element_counts[elem] > 1:
-    # #             molecular_formula += f"{elem}{element_counts.pop(elem)}"
-    # #         elif element_counts[elem] == 1:
-    # #             molecular_formula += f"{elem}"
-    # #             element_counts.pop(elem)
+#     if check_asymmetry:
+#         mols = create_asymmetric_dummy_atoms(mol, dummy_atomic_number)
+#     else:
+#         mols = [mol]
+
+#     mol_data = []
+#     for mol in mols:
+#         conf = mol.GetConformer()
+
+#         atoms = []
+#         for atom in mol.GetAtoms():
+#             pos = conf.GetAtomPosition(atom.GetIdx())
+#             atoms.append({
+#                 'label': atom.GetSymbol(),
+#                 'coordinate_x': pos.x,
+#                 'coordinate_y': pos.y,
+#                 'coordinate_z': pos.z,
+#             })
         
-    # # for elem in sorted(element_counts):
-    # #     if element_counts[elem] > 1:
-    # #         molecular_formula += f"{elem}{element_counts.pop(elem)}"
-    # #     else:
-    # #         molecular_formula += f"{elem}"
-    # #         element_counts.pop(elem)
-            
-    # # mw = 0.0
-    # # counts = {}
-    # # for atom in mol.GetAtoms():
-    # #     Z = atom.GetAtomicNum()
-    # #     sym = atom.GetSymbol().strip("0123456789")
-    # #     if Z == dummy_atomic_number:
-    # #         continue
-    # #     counts[sym] = counts.get(sym, 0) + 1
-    # #     mw += atom.GetMass()
-    
-    # # # build formula string (C, H, N, O first, then sorted remainder)
-    # # def _fmt(count_dict):
-    # #     s = ""
-    # #     for el in ('C','H','N','O'):
-    # #         if count_dict.get(el,0):
-    # #             n = count_dict.pop(el)
-    # #             s += f"{el}{n if n>1 else ''}"
-    # #     for el in sorted(count_dict):
-    # #         n = count_dict[el]
-    # #         s += f"{el}{n if n>1 else ''}"
-    # #     return s
-    # # formula = _fmt(counts.copy())
-    
-    # # 3) geometry
-    # conf = mol.GetConformer()
-    # # geom_pts = []
-    # # for atom in mol.GetAtoms():
-    # #     pos = conf.GetAtomPosition(atom.GetIdx())
-    # #     geom_pts.append(Point(x=pos.x, y=pos.y, z=pos.z, label=atom.GetSymbol()))
+#         smiles = Chem.MolToSmiles(
+#             Chem.RemoveHs(mol),
+#             canonical=True
+#         )
 
-    # # atom_data = [
-    # #     {
-    # #         'atom': atom.GetSymbol(),
-    # #         'coordinate_x': pos.x,
-    # #         'coordinate_y': pos.y,
-    # #         'coordinate_z': pos.z,
-    # #         # 'bond': [],
-    # #         # 'mmtype': atom.GetProp('_uffAtomType') if atom.HasProp('_uffAtomType') else "",
-    # #         # 'qmmm': "MM"
-    # #     }
-    # #     for (atom, conf.GetAtomPosition(atom.GetIdx())) in atom in mol.GetAtoms()
-    # # ]
+    
+#         mol_data.append({
+#             'mol': mol,
+#             'charge': charge,
+#             'molecular_weight': molecular_weight,
+#             'molecular_formula': molecular_formula,
+#             'atoms': atoms,
+#             'smiles': smiles,
+#         })
 
-    # atom_data = []
-    # for atom in mol.GetAtoms():
-    #     pos = conf.GetAtomPosition(atom.GetIdx())
-    #     atom_data.append({
-    #         'atom': atom.GetSymbol(),
-    #         'coordinate_x': pos.x,
-    #         'coordinate_y': pos.y,
-    #         'coordinate_z': pos.z,
-    #         'bond': [],
-    #         'mmtype': atom.GetProp('_uffAtomType') if atom.HasProp('_uffAtomType') else "",
-    #         'qmmm': "MM"
-    #     })
+#     return mol_data
+
     
-    # # 4) smiles & mol block
-    # smiles = Chem.MolToSmiles(mol, canonical=True)
-    # # mol_block = Chem.MolToMolBlock(mol)
-    
-    # return {
-    #     'mol': mol,
-    #     'charge': charge,
-    #     'molecular_weight': molecular_weight,
-    #     'molecular_formula': molecular_formula,
-    #     'atom_data': atom_data,
-    #     'smiles': smiles,
-    # }
 
 def reset_dummy_atom_atomic_numbers(mol: Chem.Mol, atomic_number: int):
     rw = Chem.RWMol(mol)

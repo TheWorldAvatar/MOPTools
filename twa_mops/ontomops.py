@@ -533,6 +533,8 @@ class CBUAssemblyCenter(CoordinatePoint):
 ## Object properties
 HasFragmentType = ObjectProperty.create_from_base('HasFragmentType', OntoMOPs)
 HasMolecularFragment = ObjectProperty.create_from_base('HasMolecularFragment', OntoMOPs)
+IsIsomerOf = ObjectProperty.create_from_base('IsIsomerOf', OntoMOPs)
+
 
 ## Data properties
 HasSmiles = DatatypeProperty.create_from_base('HasSmiles', OntoMOPs)
@@ -567,6 +569,7 @@ class LinkerFragment(FragmentType):
     isCyclic: Optional[IsLinearFragment[bool]] = None
     isLinear: Optional[IsCyclicFragment[bool]] = None
     hasNumDummyAtoms: HasNumDummyAtoms[int] = 2
+    isIsomerOf: Optional[IsIsomerOf[LinkerFragment]] = None
 
     @property
     def is_linear(self) -> bool:
@@ -646,6 +649,81 @@ class MolecularFragment(BaseClass):
                 self._mol_block = f.read()
         
         return self._mol_block
+    
+    @property
+    def is_asymmetric(self) -> bool:
+        """
+        Returns True if the fragment is asymmetric, False otherwise.
+        This is determined by the number of dummy atoms in the fragment type.
+        """
+
+        if hasattr(self, '_is_asymmetric'):
+            return self._is_asymmetric
+        
+        from molecular_fragment_utils import is_asymmetric_dummy_atoms
+
+        self._is_asymmetric = is_asymmetric_dummy_atoms(
+            self.smiles,
+            list(self.hasDummyAtomicNumber)[0],
+        )
+
+        return self._is_asymmetric
+    
+    @classmethod
+    def create_asymmetric_linker(
+        cls,
+        fragment,
+    ) -> 'MolecularFragment':
+        """
+        Create a MolecularFragment instance with asymmetric properties.
+        """
+        from molecular_fragment_utils import create_swapped_dummy_atoms_mol
+
+        if not fragment.is_linker_fragment or not fragment.is_asymmetric:
+            return None
+        
+        
+        dummy_atomic_number = list(fragment.hasDummyAtomicNumber)[0]
+        charge = fragment.charge
+        molecular_weight = fragment.molecular_weight
+        molecular_formula = fragment.molecular_formula
+        mol_file_path = list(fragment.hasGeometry)[0].geometry_file
+        new_file_path = os.path.splitext(mol_file_path)[0] + '_asymmetric.mol'
+
+        data = create_swapped_dummy_atoms_mol(
+            mol_file_path,
+            new_file_path,
+            dummy_atomic_number=dummy_atomic_number
+        )
+
+
+        # Create a geometry object
+        pts = []
+        for atom in data["atoms"]:
+            pt = Point(
+                x=atom["coordinate_x"],
+                y=atom["coordinate_y"], 
+                z=atom["coordinate_z"],
+                label=atom["label"]
+            )
+            pts.append(pt)
+
+        geo = ontospecies.Geometry(
+            hasPoints=pts,
+            hasGeometryFile=mol_file_path,
+        )
+
+        return cls(
+            instance_iri=cls.init_instance_iri(),
+            hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
+            hasMolecularWeight=ontospecies.MolecularWeight(hasValue=om.Measure(hasNumericalValue=molecular_weight, hasUnit=om.gramPerMole)),
+            hasMolecularFormula=molecular_formula,
+            hasGeometry=geo,
+            hasFragmentType=fragment.hasFragmentType,  # Use the same fragment type as the original fragment
+            hasSmiles=data["smiles"],
+            hasDummyAtomicNumber=dummy_atomic_number,
+            IsIsomerOf={fragment}  # Link to the original fragment as an isomer
+        )
 
     
     @classmethod
