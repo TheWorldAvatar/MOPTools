@@ -110,11 +110,9 @@ def create_swapped_dummy_atoms_mol(
 
 
 
-def load_molecular_fragment_from_mol_file(
+def load_molecular_fragment_from_mol_file( #TODO change to mol file content/str so works with local and remote
     mol_file_path: str,
     dummy_atomic_number: int = 0,
-    check_asymmetry: bool = False,
-    # sanitize: bool = False,
 ) -> dict:
     """
     Load a molecule from a .mol file and compute all of the
@@ -266,6 +264,7 @@ def _compute_rigid_transform(P_src: np.ndarray, P_dst: np.ndarray):
     t = centroid_dst - R @ centroid_src
     return R, t
 
+
 def reassemble_two_fragments(
         frag1: Chem.Mol, 
         frag2: Chem.Mol, 
@@ -285,10 +284,10 @@ def reassemble_two_fragments(
     # Choose bond type to add
     bond_to_add = bond_type1 if bond_type1 == bond_type2 else bond_type1
     
-    pt = rdchem.GetPeriodicTable()
-    r1 = pt.GetRcovalent(frag1.GetAtomWithIdx(h1_idx).GetAtomicNum())
-    r2 = pt.GetRcovalent(frag2.GetAtomWithIdx(h2_idx).GetAtomicNum())
-    target_dist = (r1 + r2) #/ 2.0
+    # pt = rdchem.GetPeriodicTable()
+    # r1 = pt.GetRcovalent(frag1.GetAtomWithIdx(h1_idx).GetAtomicNum())
+    # r2 = pt.GetRcovalent(frag2.GetAtomWithIdx(h2_idx).GetAtomicNum())
+    # target_dist = (r1 + r2) #/ 2.0
 
     # 3) Build a local frame [e1,e2,e3] at each dummy‐neighbour, and their origins.
     conf1 = frag1.GetConformer()
