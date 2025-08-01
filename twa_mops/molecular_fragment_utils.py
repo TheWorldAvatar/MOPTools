@@ -394,73 +394,138 @@ def _load_fragment_molecule_from_mol_file(
 
 
 def make_binding_groups_coplanar(mol: Chem.Mol, conf: Chem.Conformer):
+    """Adjust torsions between binding fragments so that binding atoms lie close to a common plane.
+
+    * ≥3 sites  → minimise binding‑atom distances to mid‑point plane.
+    *   2 sites → make coplanar with first binding fragment.
     """
-    Rotate all carboxylate (–COO⁻) groups (and pyrazole matches) so that
-    their out-of-plane torsions are driven to zero, i.e. they become coplanar.
-    Modifies `conf` in place.
+        
+    # -----------------------------------------------------------------------------
+    # Helper geometry routines
+    # -----------------------------------------------------------------------------
 
-    TODO: if greater than 2 binding groups, rotate to binding plane
-    """
+    def reset_conf(conf, orig):
+        """Restore *conf* coordinates from *orig* list of (x,y,z)."""
+        for i, pos in enumerate(orig):
+            conf.SetAtomPosition(i, pos)
 
-    if conf is None:
-        raise ValueError("No conformer found in the molecule")
 
-    def reset_coords(pts):
-        for idx, p in enumerate(orig_pos):
-            conf.SetAtomPosition(idx, p)
+    def fit_plane(points: np.ndarray):
+        """Return (centroid, unit normal) of least‑squares plane through *points*."""
+        centroid = points.mean(axis=0)
+        _, _, vh = np.linalg.svd(points - centroid)
+        normal = vh[-1]
+        return centroid, normal / np.linalg.norm(normal)
 
-    def measure_inter_torsions(conf, defs):
-        return [AllChem.GetDihedralDeg(conf, *t) for t in defs]
 
-    def objective(angles, conf, defs_var, defs_inter):
-        reset_coords(orig_pos)
-        # set each –C–C=O dihedral
-        for θ, (r1, r2, c, o) in zip(angles, defs_var):
-            rdMolTransforms.SetDihedralDeg(conf, r1, r2, c, o, float(θ))
-        # sum absolute inter-group torsions
-        return np.sum(np.abs(measure_inter_torsions(conf, defs_inter)))
+    def get_CCO_dihedrals(conf, torsion_defs):
+        return [AllChem.GetDihedralDeg(conf, *t) for t in torsion_defs]
 
-    # save original
+    # -----------------------------------------------------------------------------
+    # Optimisation objectives
+    # -----------------------------------------------------------------------------
+
+    def objective_pairwise(angles, conf, orig_pos, cco_defs, inter_defs):
+        """objective for exactly two sites (pairwise torsion matching). make coplanar"""
+        reset_conf(conf, orig_pos)
+        for theta, (a,b,c,d) in zip(angles, cco_defs):
+            rdMolTransforms.SetDihedralDeg(conf, a, b, c, d, float(theta))
+        inter_binding_site_dihedrals = [AllChem.GetDihedralDeg(conf, *d) for d in inter_defs]
+        return float(np.sum(np.abs(inter_binding_site_dihedrals)))
+
+
+    def objective_plane_atoms(angles, conf, orig_pos, cco_defs, mid_pairs, bind_atoms):
+        """Minimise the sum of squared distances of *binding atoms* to the plane
+        defined by the mid‑points of the binding sites.
+        """
+        reset_conf(conf, orig_pos)
+        # 1) Apply the trial torsions
+        for theta, (a,b,c,d) in zip(angles, cco_defs):
+            rdMolTransforms.SetDihedralDeg(conf, a, b, c, d, float(theta))
+
+        # 2) Compute the mid‑points and fit their best‑fit plane
+        mid_pts = []
+        for o1, o2 in mid_pairs:
+            p1, p2 = conf.GetAtomPosition(o1), conf.GetAtomPosition(o2)
+            mid_pts.append([(p1.x+p2.x)*0.5, (p1.y+p2.y)*0.5, (p1.z+p2.z)*0.5])
+        centroid, normal = fit_plane(np.asarray(mid_pts))
+
+        # 3) Distances of *all binding atoms* to that plane
+        acc = 0.0
+        for idx in bind_atoms:
+            p = conf.GetAtomPosition(idx)
+            d = np.dot(np.array([p.x, p.y, p.z]) - centroid, normal)
+            acc += d*d
+        return float(acc)
+    
+    # -----------------------------------------------------------------------------
+    # Save original coordinates
+    # -----------------------------------------------------------------------------
+
     orig_pos = [tuple(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())]
 
-    # collect all –C(=O)[O-] (or –C(=O)[O]) matches
-    patt_coo = Chem.MolFromSmarts('*[C;X3](=O)[O-]') # Chem.MolFromSmarts('*[C;X3](=O)[O]') # Chem.MolFromSmarts('*[C;X3](=O)[O-]')
-    patt_py  = Chem.MolFromSmarts('*c1cn[n-]c1') # 
-    matches = mol.GetSubstructMatches(patt_coo) + mol.GetSubstructMatches(patt_py)
-    if len(matches) < 2:
-        return  # nothing to do
+    # ---------------------------------------------------------------------
+    # 1) Locate binding sites by smiles matching # TODO: should pass binding fragments
+    # ---------------------------------------------------------------------
+    patt_coo = Chem.MolFromSmarts('*[C;X3](=O)[O-]')  
+    matches = list(mol.GetSubstructMatches(patt_coo))
 
-    # define the variable dihedrals: for each match except the first
-    var_defs = []
-    for match in matches[1:]:
-        carbon = match[0]
-        nbrs = [n.GetIdx() for n in mol.GetAtomWithIdx(carbon).GetNeighbors()
-                if n.GetIdx() not in match]
-        # (R–C–O–O) => pick nbrs[0], carbon, match[1], match[2]
-        var_defs.append((nbrs[0], carbon, match[1], match[2]))
+    patt2 = Chem.MolFromSmarts('*c1cn[n-]c1')
+    matches += mol.GetSubstructMatches(patt2)
+    print(matches)
+    if len(matches) < 3:
+        raise RuntimeError("Need ≥2 carboxylates to define inter-COO torsions")
+    n_sites = len(matches)
+    if n_sites < 2:
+        raise RuntimeError(f"Need ≥2 binding sites, found {n_sites}")
 
-    # define inter-group torsions relative to the first match
-    inter_defs = []
-    ref = matches[0]
-    for m in matches[1:]:
-        inter_defs.append((ref[2], ref[1], m[1], m[2]))
+    # ---------------------------------------------------------------------
+    # 2) Build inter binding fragment torsion definitions
+    # ---------------------------------------------------------------------
+    variable_torsions = []
+    for m in matches:
+        r = m[0]
+        neigh = [nbr.GetIdx() for nbr in mol.GetAtomWithIdx(r).GetNeighbors()
+                 if nbr.GetIdx() not in m]
+        variable_torsions.append((neigh[0], r, m[1], m[2]))
 
-    # initial angles
-    init = [AllChem.GetDihedralDeg(conf, *t) for t in var_defs]
+    starting_binding_frag_dihedrals = [AllChem.GetDihedralDeg(conf, *t) for t in variable_torsions] #get_CCO_dihedrals(conf, variable_torsions)
+    print("Initial binding fragments inter dihedrals:", np.round(starting_binding_frag_dihedrals, 2))
 
-    # optimize
-    res = minimize(
-        objective, x0=np.array(init),
-        args=(conf, var_defs, inter_defs),
-        method="Powell",
-        options={"maxiter": 500, "disp": False}
-    )
-    optimized = res.x
+    # ---------------------------------------------------------------------
+    # 3) Optimisation branch: two sites vs ≥3 sites
+    # ---------------------------------------------------------------------
+    if n_sites == 2:
+        # ========== Two‑site fallback ===========
+        (c0, o0_db, o0_sg) = matches[0][1:4]
+        (c1, o1_db, o1_sg) = matches[1][1:4]
+        inter_defs = [(o0_sg, c0, c1, o1_sg)]
+        res = minimize(
+            objective_pairwise,
+            x0=np.array(starting_binding_frag_dihedrals),
+            args=(conf, orig_pos, variable_torsions, inter_defs),
+            method="Powell",
+            options={"maxiter": 500, "disp": True},
+        )
+    else:
+        # ========== Plane‑based objective for ≥3 sites ===========
+        mid_pairs = [(m[2], m[3]) for m in matches]  # (O_db, O_sg)
+        bind_atoms = [idx for m in matches for idx in (m[1], m[2], m[3])]
+        res = minimize(
+            objective_plane_atoms,
+            x0=np.array(starting_binding_frag_dihedrals),
+            args=(conf, orig_pos, variable_torsions, mid_pairs, bind_atoms),
+            method="Powell",
+            options={"maxiter": 800, "disp": True},
+        )
 
-    # apply optimized angles
-    reset_coords(orig_pos)
-    for θ, tup in zip(optimized, var_defs):
-        rdMolTransforms.SetDihedralDeg(conf, *tup, float(θ))
+    # ---------------------------------------------------------------------
+    # 4) Apply optimised torsions
+    # ---------------------------------------------------------------------
+    reset_conf(conf, orig_pos)
+    for theta, (a,b,c,d) in zip(res.x, variable_torsions):
+        rdMolTransforms.SetDihedralDeg(conf, a, b, c, d, float(theta))
+
 
 def determine_binding_atoms_from_mol(mol: Chem.Mol) -> list[str]:
     """
@@ -806,21 +871,28 @@ def assemble_fragments_to_cbu(
         )
         new_bonds.append(new_bond)
     else:
-        node_dummy_atoms = sum([1 for _c in node_mol.GetAtoms() if _c.GetAtomicNum() == 0])
+        num_node_dummy_atoms = sum([1 for _c in node_mol.GetAtoms() if _c.GetAtomicNum() == 0])
         # cbu_formula = "CH"
         cbu_formula = (
             f"({mol_formula(node_mol)})" + "(" +
             "".join([f"({mol_formula(m)})" for m in linker_mols + [binding_group_mol] ]) + ")" + 
-            f"{str(node_dummy_atoms)}"
+            f"{str(num_node_dummy_atoms)}"
         )
         arm_mol = cbu_mol
         _cbu_mol = node_mol
-        for _ in range(node_dummy_atoms):
+        arm_new_bonds = [ b for b in new_bonds ]
+        new_bonds = []
+        node_offset = node_mol.GetNumAtoms() - num_node_dummy_atoms
+        arm_offset = arm_mol.GetNumAtoms() - 1
+        for i in range(num_node_dummy_atoms):
             _cbu_mol, new_bond = reassemble_two_fragments(
                 _cbu_mol, arm_mol,
                 sanitize=kwargs.get("sanitize", False)
             )
+            # TODO : this is a quick fix to correct the atom indices, probably better way to do this
+            new_bond = (new_bond[0], new_bond[1] + i + 1 - num_node_dummy_atoms ) # the idx of the frag depends on how many dummy atoms have been removed, fortuantely will always be the second index
             new_bonds.append(new_bond)
+            new_bonds += [ (x[0] + node_offset + i*arm_offset, x[1] + node_offset + i*arm_offset) for x in arm_new_bonds ]
         cbu_mol = _cbu_mol
         
 
