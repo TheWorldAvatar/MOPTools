@@ -3,6 +3,6 @@ pandas==2.3.2
 numpy
 scipy
 pydantic==2.3.0
-pydantic-core==2.3.0
+pydantic-core==2.6.3
 plotly
 rdkit
