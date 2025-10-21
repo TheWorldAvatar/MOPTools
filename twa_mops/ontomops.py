@@ -1341,57 +1341,148 @@ class ChemicalBuildingUnit(BaseClass):
         template: ChemicalBuildingUnitTemplate,
         fragments: List[MolecularFragment],
         unique_only=True,
+        constraint_fn=None,
+        assemble_smiles=False,
+        max_cbus=None,
+        symmetric_linker_orientations: bool = False, 
+        **kwargs
     ) -> List[ChemicalBuildingUnit]:
         """
         Create all ChemicalBuildingUnit instances from the given fragments.
-        This method will iterate through the template positions and match the fragments to the required types.
+
+        Parameters
+        ----------
+        symmetric_linker_orientations : bool, optional
+            If True, then for every *individual* fragment template that is an
+            asymmetric linker AND has multiple positions, the first_dummy_index
+            values of the fragments occupying those positions will be forced to
+            alternate (e.g. only 0,1,0,1 or 1,0,1,0). This ensures only 
+            symmetric metal environments are generated
+            # TODO could just make sure the first and last are the same frag 
+            # and opposite orientation, but this is more general
         """
         from itertools import product
 
+        assemble_cbu_fn = (
+            ChemicalBuildingUnit.from_molecular_fragments_smiles
+            if assemble_smiles else
+            ChemicalBuildingUnit.from_molecular_fragments
+        )
+
         cbus = []
-        unique_smiles = []
+        unique_smiles = set()
 
-        frag_templates = sorted([ 
-            frag_template for frag_template in template.hasCBUFragmentTemplate 
-        ], key=lambda x: min(x.hasFragmentPositions))
-
+        frag_templates = sorted(
+            template.hasCBUFragmentTemplate,
+            key=lambda ft: min(ft.hasFragmentPositions)
+        )
         fragment_lists = [
-            [f for f in fragments if frag_template.accepts(f)] 
-            for frag_template in frag_templates
+            [f for f in fragments if ft.accepts(f)]
+            for ft in frag_templates
         ]
-
-        if any(len(fl) == 0 for fl in fragment_lists):
-            raise ValueError("unfullilled template positions, fragments do not match all required types.")
+        if any(len(lst) == 0 for lst in fragment_lists):
+            raise ValueError("unfulfilled template positions, fragments do not match all required types.")
 
         total_combinations = 0
         for combo in product(*fragment_lists):
+            # Map template position → (fragment, fragment_template)
+            position_map = {}
+            for frag, ft in zip(combo, frag_templates):
+                for pos in ft.hasFragmentPositions:
+                    position_map[pos] = (frag, ft)
+            ordered = [position_map[p] for p in sorted(position_map)]
 
-            # create the linker fragments array by going through the linker templates and putting the linker fragments in the correct order
-            fragment_positions = {}
+            frags = [f for f, _ in ordered]
+            fts   = [t for _, t in ordered]
 
-            for frag, frag_template in zip(combo, frag_templates):
-                for pos in frag_template.hasFragmentPositions:
-                    fragment_positions[pos] = frag
-
-            ordered_fragments = [frag for _, frag in sorted(fragment_positions.items())]
-
-            cbu = ChemicalBuildingUnit.from_molecular_fragments(
-                fragments=ordered_fragments,
-                gbu_type=template.gbu_type,
-            )
-            smiles = list(cbu.hasSmiles)[0]
-            if unique_only and smiles in unique_smiles:
+            if constraint_fn and not constraint_fn(frags, fts):
                 continue
-            unique_smiles.append(smiles)
-            # if not unique_only or smiles not in unique_smiles:
-            cbu.hasChemicalBuildingUnitTemplate = {template}
 
-            cbus.append(cbu)
-            total_combinations += 1
+            # gather only linker fragments
+            linker_info = [
+                (i, frags[i], fts[i])
+                for i in range(len(frags))
+                if frags[i].is_linker_fragment
+            ]
+            # positions (inside linker_info) that are asymmetric
+            asymm_slots = [
+                idx for idx, (_, frag, _) in enumerate(linker_info)
+                if frag.is_asymmetric
+            ]
 
+            # group asymmetric linker positions by their template 
+            template_slot_map = {}
+            for pos in asymm_slots:
+                _, _, ft = linker_info[pos]
+                template_slot_map.setdefault(ft, []).append(pos)
+
+            # keep only those templates with >1 positions
+            multi_pos_groups = {
+                ft: slot_list
+                for ft, slot_list in template_slot_map.items()
+                if len(ft.hasFragmentPositions) > 1
+            }
+
+            # generate unique orientation bit combinations
+            unique = []
+            for bits in product([0, 1], repeat=len(asymm_slots)):
+                # TODO does this work for nodes with one linker?
+                # skip mirrored duplicates
+                rev = bits[::-1]
+                inv = tuple(1 - b for b in rev)
+                if inv in unique:
+                    continue
+
+                if symmetric_linker_orientations and multi_pos_groups:
+                    valid = True
+                    for slot_list in multi_pos_groups.values():
+                        # indices of bits that correspond to this template
+                        sub = tuple(
+                            bits[asymm_slots.index(sl)]
+                            for sl in slot_list
+                        )
+                        if len(sub) > 1:
+                            # require the bits alternate to be (psuedo)symmetric
+                            if not all(sub[i] != sub[i+1] for i in range(len(sub)-1)):
+                                valid = False
+                                break
+                    if not valid:
+                        continue
+                unique.append(bits)
+
+            for bits in unique:
+                linker_first_dummy = [0] * len(linker_info)
+                for bit_idx, slot in enumerate(asymm_slots):
+                    linker_first_dummy[slot] = bits[bit_idx]
+
+                try:
+                    cbu = assemble_cbu_fn(
+                        fragments=frags,
+                        gbu_type=template.gbu_type,
+                        linker_first_dummy_idxs=linker_first_dummy,
+                        **kwargs
+                    )
+                except Exception as e:
+                    print(f"Skipping CBU due to assembly error: {e}")
+                    continue
+
+                smiles = next(iter(cbu.hasSmiles))
+                if unique_only and smiles in unique_smiles:
+                    if cbu.hasGeometry is not None:
+                        os.remove(list(cbu.hasGeometry)[0].geometry_file)
+                    continue
+                unique_smiles.add(smiles)
+                cbu.hasChemicalBuildingUnitTemplate = {template}
+                cbus.append(cbu)
+                total_combinations += 1
+
+                if max_cbus is not None and total_combinations > max_cbus:
+                    break
+            if max_cbus is not None and total_combinations > max_cbus:
+                break
+
+        print("total CBU combinations assembled =", total_combinations)
         return cbus
-
-
 
     @property
     def vector_to_binding_site_plane(self):
