@@ -1184,6 +1184,7 @@ class ChemicalBuildingUnit(BaseClass):
         gbu: Optional[GenericBuildingUnit] = None,
         direct_binding: bool = True,
         metal_site: bool = False,
+        linker_first_dummy_idxs = None,
         **kwargs
     ) -> 'ChemicalBuildingUnit':
         from molecular_fragment_utils import assemble_fragments_to_cbu
@@ -1192,7 +1193,7 @@ class ChemicalBuildingUnit(BaseClass):
         linker_fragments = [f for f in fragments if f.is_linker_fragment]
         node_fragments = [f for f in fragments if f.is_node_fragment]
 
-        cbu_frags = [
+        cbu_frags = [ # TODO add direction
             ChemicalBuildingUnitFragment(
                 hasMolecularFragment=frag,
                 hasFragmentPositions=[i for i in range(len(fragments)) if fragments[i] == frag]
@@ -1201,10 +1202,8 @@ class ChemicalBuildingUnit(BaseClass):
 
         if not direct_binding:
             raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
-        if not binding_fragments: # what if wanted to assemble only linker and node fragments e.g. 4-planar cores? wouldnt' be a cbu, use the frag util functions, same for substituting frags
+        if not binding_fragments: # what if wanted to assemble only linker and node fragments e.g. 4-planar cores? could use the frag util functions, same for substituting frags
             raise ValueError("The list of binding fragments is empty.")
-        # if not linker_fragments and not node_fragments:
-        #     raise ValueError("At least one linker or node fragment is required.")
 
         # TODO: reset all fragments to have the same dummy atomic number (maybe when load from mol file)
         dummy_atomic_number = {list(x.hasDummyAtomicNumber)[0] for x in fragments}
@@ -1217,56 +1216,34 @@ class ChemicalBuildingUnit(BaseClass):
         ocn = list(binding_group.fragment_type.hasOuterCoordinationNumber)[0]
         binding_atoms = list(binding_group.fragment_type.hasBindingFragment)[0]
 
-        # TODO
-        # return smiles and use binding frag to get binding atoms
         cbu_json, cbu_smiles, cbu_formula, cbu_mol_block = assemble_fragments_to_cbu(
             linker_mol_files=[list(x.hasGeometry)[0].geometry_file for x in linker_fragments],
             binding_group_mol_files = [list(x.hasGeometry)[0].geometry_file for x in binding_fragments][0],
             node_mol_files = [list(x.hasGeometry)[0].geometry_file for x in node_fragments][0] if node_fragments else None,
             dummy_atomic_number=dummy_atomic_number,
+            linker_first_dummy_idxs=linker_first_dummy_idxs,
             **kwargs
         )
 
         cbu_charge = 0
         cbu_mw = 0
-        # cbu_formula = ''
         
         for frag in fragments:
             cbu_charge += frag.charge
             cbu_mw += frag.molecular_weight
-        #     if frag.is_binding_fragment and not node_fragments:
-        #         cbu_formula += f'({frag.molecular_formula})2'
-        #     else:
-        #         cbu_formula += f'({frag.molecular_formula})'
-
-
-        # if gbu_type == GBU_TYPE_2_LINEAR:
-        #     pass
 
         binding_sites, assemb_center, atom_points = cls.process_geometry_json(
             cbu_json, 
             ocn, 
-            binding_atoms, 
+            binding_atoms,
             gbu_type, 
             metal_site
         )
         
         # prepare the geometry of the CBU   
         cbu_iri = cls.init_instance_iri()
-        cbu_xyz_file = f"{cbu_iri.split('/')[-1]}.xyz"
+        cbu_xyz_file = f"./new_cbus/{cbu_iri.split('/')[-1]}.xyz" # TODO: change to relative path to the kg
         cbu_geo = ontospecies.Geometry.from_points(atom_points, cbu_xyz_file)
-
-        # geometry = []
-        # for atom in cbu_mol.GetAtoms():
-        #     pos = cbu_mol.GetConformer().GetAtomPosition(atom.GetIdx())
-        #     geometry.append(Point(x=pos.x, y=pos.y, z=pos.z, label=atom.GetSymbol()))
-        # cbu_geo = ontospecies.Geometry(
-        #     hasGeometryFile=None,  # TODO: handle geometry file if needed
-        #     hasPoints=geometry,
-        # )
-        
-
-        # for fra
             
         # instantiate actual CBU
         return cls(
