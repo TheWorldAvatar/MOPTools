@@ -399,40 +399,91 @@ def _load_fragment_molecule_from_mol_file(
     return mol
 
 
-def make_binding_groups_coplanar(mol: Chem.Mol, conf: Chem.Conformer):
-    """Adjust torsions between binding fragments so that binding atoms lie close to a common plane.
+def make_binding_groups_coplanar(
+        mol: Chem.Mol, 
+        conf: Chem.Conformer, 
+        is_2bent=False,
+        binding_site_angle_offset=0.0,
+    ):
+    """
+    Adjust torsions around binding sites so that they are aligned correctly. For
+    two binding sites, this means making them coplanar.
+    For three or more binding sites, this means making them all lie in a common plane.
+    For 2-bent, this means aligning to plane including binding site axes intersection.
 
-    * ≥3 sites  → minimise binding‑atom distances to mid‑point plane.
-    *   2 sites → make coplanar with first binding fragment.
+    # TODO: refactor to use functions from geo.py
+    # TODO: remove carboxylate naming assumption
+
+    Args:
+        mol: Chem.Mol
+            The RDKit molecule containing binding sites.
+        conf: Chem.Conformer
+            The conformer of the molecule to modify.
+        is_2bent: bool
+            Whether the molecule is a 2-bent type (special case for two binding sites).
+        binding_site_angle_offset: float
+            An angle offset to add to the final binding site torsions (degrees).   
     """
         
-    # -----------------------------------------------------------------------------
-    # Helper geometry routines
-    # -----------------------------------------------------------------------------
-
+    #################################################################################
+    # helper functions and opt objective functions
+    #################################################################################
     def reset_conf(conf, orig):
-        """Restore *conf* coordinates from *orig* list of (x,y,z)."""
+        """Restore coordinates from original list."""
         for i, pos in enumerate(orig):
             conf.SetAtomPosition(i, pos)
 
 
     def fit_plane(points: np.ndarray):
-        """Return (centroid, unit normal) of least‑squares plane through *points*."""
+        """Return (centroid, unit normal) of least-squares plane through points."""
         centroid = points.mean(axis=0)
         _, _, vh = np.linalg.svd(points - centroid)
         normal = vh[-1]
         return centroid, normal / np.linalg.norm(normal)
+    
+    def find_intersection_of_lines(p1, d1, p2, d2):
+        """
+        p1, p2: (3,) float arrays
+            anchor points on the two lines
+        d1, d2: (3,) float arrays
+            direction vectors (need not be unit-length)
 
+        Returns the midpoint of the shortest segment connecting the two
+        infinite lines, or None if they are (numerically) parallel.
+        """
+        a = np.column_stack((d1, -d2))           # 3×2 matrix
+        b = p2 - p1                              # 3-vector
+        if np.linalg.matrix_rank(a) < 2:         # lines almost parallel
+            raise ValueError("lines are parallel and do not have intersection point")
+        # least-squares solution of  a*[t, s]^T = b
+        t = np.linalg.lstsq(a, b, rcond=None)[0][0]
+        intersection = p1 + t * d1 # p1 + t·d1
+        return intersection
+    
+    def atom_array(idx):
+        p = conf.GetAtomPosition(idx)
+        return np.array([p.x, p.y, p.z])
 
-    def get_CCO_dihedrals(conf, torsion_defs):
-        return [AllChem.GetDihedralDeg(conf, *t) for t in torsion_defs]
-
-    # -----------------------------------------------------------------------------
-    # Optimisation objectives
-    # -----------------------------------------------------------------------------
 
     def objective_pairwise(angles, conf, orig_pos, cco_defs, inter_defs):
-        """objective for exactly two sites (pairwise torsion matching). make coplanar"""
+        """
+        objective for 2-linear, makes binding groups coplanar
+        
+        args:
+            angles: iterable of float
+                trial torsion angles for each binding site
+            conf: Chem.Conformer
+                conformer to modify
+            orig_pos: list of tuple of float
+                original coordinates to reset to
+            cco_defs: list of tuple of int
+                torsion definitions for each binding site
+            inter_defs: list of tuple of int
+                torsion definitions for inter-binding site dihedrals
+        returns:
+            float
+                sum of absolute values of inter-binding site dihedrals
+        """
         reset_conf(conf, orig_pos)
         for theta, (a,b,c,d) in zip(angles, cco_defs):
             rdMolTransforms.SetDihedralDeg(conf, a, b, c, d, float(theta))
@@ -440,23 +491,45 @@ def make_binding_groups_coplanar(mol: Chem.Mol, conf: Chem.Conformer):
         return float(np.sum(np.abs(inter_binding_site_dihedrals)))
 
 
-    def objective_plane_atoms(angles, conf, orig_pos, cco_defs, mid_pairs, bind_atoms):
-        """Minimise the sum of squared distances of *binding atoms* to the plane
-        defined by the mid‑points of the binding sites.
+    def objective_plane_atoms(angles, conf, orig_pos, cco_defs, mid_pairs, bind_atoms, inter_pt=None):
+        """Minimise the sum of squared distances of binding atoms to the plane
+        defined by the mid-points of the binding sites.
+
+        Args:
+            angles: iterable of float
+                trial torsion angles for each binding site
+            conf: Chem.Conformer
+                conformer to modify
+            orig_pos: list of tuple of float
+                original coordinates to reset to
+            cco_defs: list of tuple of int
+                torsion definitions for each binding site
+            mid_pairs: list of tuple of int
+                pairs of atom indices defining mid-points for each binding site
+            bind_atoms: list of int
+                atom indices of all binding atoms
+            inter_pt: (3,) float array or None
+                optional intersection point to include in plane fitting
+
+        Returns:
+            float
+                sum of squared distances of binding atoms to fitted plane
         """
         reset_conf(conf, orig_pos)
-        # 1) Apply the trial torsions
+        # apply the trial torsions
         for theta, (a,b,c,d) in zip(angles, cco_defs):
             rdMolTransforms.SetDihedralDeg(conf, a, b, c, d, float(theta))
 
-        # 2) Compute the mid‑points and fit their best‑fit plane
+        # compute the mid‑points and fit their best‑fit plane
         mid_pts = []
         for o1, o2 in mid_pairs:
             p1, p2 = conf.GetAtomPosition(o1), conf.GetAtomPosition(o2)
             mid_pts.append([(p1.x+p2.x)*0.5, (p1.y+p2.y)*0.5, (p1.z+p2.z)*0.5])
+        if inter_pt is not None:
+            mid_pts.append(inter_pt)
         centroid, normal = fit_plane(np.asarray(mid_pts))
 
-        # 3) Distances of *all binding atoms* to that plane
+        # distances of all binding atoms to that plane
         acc = 0.0
         for idx in bind_atoms:
             p = conf.GetAtomPosition(idx)
@@ -464,30 +537,27 @@ def make_binding_groups_coplanar(mol: Chem.Mol, conf: Chem.Conformer):
             acc += d*d
         return float(acc)
     
-    # -----------------------------------------------------------------------------
-    # Save original coordinates
-    # -----------------------------------------------------------------------------
-
+    #################################################################################
+    
+    
+    
+    # save original coordinates
     orig_pos = [tuple(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())]
 
-    # ---------------------------------------------------------------------
-    # 1) Locate binding sites by smiles matching # TODO: should pass binding fragments
-    # ---------------------------------------------------------------------
-    patt_coo = Chem.MolFromSmarts('*[C;X3](=O)[O-]')  
+    # get binding site indices by pattern matching
+    patt_coo = Chem.MolFromSmarts('*[C;X3](=O)[O-]') # 0 = neighbour, 1 = C, 2 = O (double), 3 = O (single)
     matches = list(mol.GetSubstructMatches(patt_coo))
 
-    patt2 = Chem.MolFromSmarts('*c1cn[n-]c1')
+    patt2 = Chem.MolFromSmarts('*c1cn[n-]c1') # 0 = neighbour, 1 = c1, 2 = c2, 3 = n3, 4 = n4, 5 = c5
     matches += mol.GetSubstructMatches(patt2)
-    print(matches)
-    if len(matches) < 3:
-        raise RuntimeError("Need ≥2 carboxylates to define inter-COO torsions")
+
     n_sites = len(matches)
     if n_sites < 2:
         raise RuntimeError(f"Need ≥2 binding sites, found {n_sites}")
 
-    # ---------------------------------------------------------------------
-    # 2) Build inter binding fragment torsion definitions
-    # ---------------------------------------------------------------------
+    # get torsion definitions for each binding fragment
+    # second atom in neigbour, first atom in neighbour,
+    # first atom in fragment, second atom in fragment 
     variable_torsions = []
     for m in matches:
         r = m[0]
@@ -495,15 +565,44 @@ def make_binding_groups_coplanar(mol: Chem.Mol, conf: Chem.Conformer):
                  if nbr.GetIdx() not in m]
         variable_torsions.append((neigh[0], r, m[1], m[2]))
 
-    starting_binding_frag_dihedrals = [AllChem.GetDihedralDeg(conf, *t) for t in variable_torsions] #get_CCO_dihedrals(conf, variable_torsions)
-    print("Initial binding fragments inter dihedrals:", np.round(starting_binding_frag_dihedrals, 2))
+    starting_binding_frag_dihedrals = [AllChem.GetDihedralDeg(conf, *t) for t in variable_torsions]
 
-    # ---------------------------------------------------------------------
-    # 3) Optimisation branch: two sites vs ≥3 sites
-    # ---------------------------------------------------------------------
-    if n_sites == 2:
-        # ========== Two‑site fallback ===========
-        (c0, o0_db, o0_sg) = matches[0][1:4]
+    # Optimise torsions numerically
+    if n_sites == 2 and is_2bent: # special case for 2-bent
+        (ra0, c0), (ra1, c1) = [(t[1], t[2]) for t in variable_torsions]
+        # for coo-, ra = first neighbour atom, c = carbon atom
+        # for pyra, ra = first neighbour atom, c = first ring carbon atom
+
+        # get coordinates of neighbour and fragment atoms
+        p1, p2 = atom_array(ra0), atom_array(c0)
+        q1, q2 = atom_array(ra1), atom_array(c1)
+
+        # line aligned from first frag atom to neighbour atom
+        d1, d2 = (p2 - p1), (q2 - q1)
+
+        # find intersection point of the two lines
+        inter_pt = find_intersection_of_lines(p1, d1, q1, d2)
+
+        # pairs of atom indices defining mid-points for each binding site
+        # these are the two O atoms for carboxylate,
+        # and currently C2 and N3 for pyrazolate (TODO: works, but change to N3 and N4)
+        mid_pairs = [(m[2], m[3]) for m in matches]
+
+        bind_atoms = [idx for m in matches for idx in (m[1], m[2], m[3])] # COO- indexes
+        res = minimize(
+            objective_plane_atoms,
+            x0=np.array(starting_binding_frag_dihedrals),
+            args=(conf, orig_pos, variable_torsions, mid_pairs, bind_atoms, inter_pt),
+            method="Powell",
+            options={"maxiter": 800, "disp": False},
+        )
+
+        # for 2-bent typically want to add 90° offset to final torsions
+        binding_site_angle_offset = 90.0 + binding_site_angle_offset
+    elif n_sites == 2: # 2-linear case
+        # TODO: change to just use the first two atoms of frag? 
+        # this was the idea and only assumes binding fragment isn't linear
+        (c0, o0_db, o0_sg) = matches[0][1:4] # for pyrazolate, c0 is C1, o0_db is C2, o0_sg is N3 
         (c1, o1_db, o1_sg) = matches[1][1:4]
         inter_defs = [(o0_sg, c0, c1, o1_sg)]
         res = minimize(
@@ -511,115 +610,27 @@ def make_binding_groups_coplanar(mol: Chem.Mol, conf: Chem.Conformer):
             x0=np.array(starting_binding_frag_dihedrals),
             args=(conf, orig_pos, variable_torsions, inter_defs),
             method="Powell",
-            options={"maxiter": 500, "disp": True},
+            options={"maxiter": 500, "disp": False},
         )
-    else:
-        # ========== Plane‑based objective for ≥3 sites ===========
-        mid_pairs = [(m[2], m[3]) for m in matches]  # (O_db, O_sg)
-        bind_atoms = [idx for m in matches for idx in (m[1], m[2], m[3])]
+    else: # if n_sites >= 3, optimise to binding site plane 
+        # for COO- midpoints are the two O atoms
+        # for pyrazolate midpoints are currently C2 and N3 (TODO: change to N3 and N4)
+        mid_pairs = [(m[2], m[3]) for m in matches] 
+        bind_atoms = [idx for m in matches for idx in (m[1], m[2], m[3])] # COO- indexes
         res = minimize(
             objective_plane_atoms,
             x0=np.array(starting_binding_frag_dihedrals),
             args=(conf, orig_pos, variable_torsions, mid_pairs, bind_atoms),
             method="Powell",
-            options={"maxiter": 800, "disp": True},
+            options={"maxiter": 800, "disp": False},
         )
 
-    # ---------------------------------------------------------------------
-    # 4) Apply optimised torsions
-    # ---------------------------------------------------------------------
+    # update conformer with optimal torsions
     reset_conf(conf, orig_pos)
     for theta, (a,b,c,d) in zip(res.x, variable_torsions):
-        rdMolTransforms.SetDihedralDeg(conf, a, b, c, d, float(theta))
+        rdMolTransforms.SetDihedralDeg(conf, a, b, c, d, float(theta + binding_site_angle_offset))
 
 
-def determine_binding_atoms_from_mol(mol: Chem.Mol) -> list[str]:
-    """
-    Determine the binding atoms in a molecule based on the presence of carboxylate
-    (–COO⁻) or pyrazole (c1cn[n-]c1) groups. Returns a list of atom symbols that
-    are part of the binding groups.
-    """
-    binding_atoms = []
-    
-    # Check for carboxylate groups
-    patt_coo = Chem.MolFromSmarts('[C;X3](=O)[O-]')
-    matches_coo = mol.GetSubstructMatches(patt_coo)
-
-    if matches_coo:
-        return "CO2"  # If any carboxylate group is found, return CO2 as binding fragment
-
-    # Check for pyrazole groups
-    patt_py = Chem.MolFromSmarts('c1cn[n-]c1')
-    matches_py = mol.GetSubstructMatches(patt_py)
-
-    if matches_py:
-        return "N2"
-    
-    return None
-
-def determine_binding_atoms_from_json(cbu_json):
-    """
-    Given a geometry dict (as returned by mol_to_json_dict), find all
-    dummy atoms ("X"), compute their two nearest non-dummy neighbors,
-    and from their element types infer the binding fragment:
-      - if any neighbor is O → "CO2"
-      - if any neighbor is N → "N2"
-    """
-    binding_coords = []
-    nonbinding = []
-    # 1) split out dummy vs real atoms
-    for uid, v in cbu_json.items():
-        x, y, z = v['coordinate_x'], v['coordinate_y'], v['coordinate_z']
-        atom = v['atom']
-        if atom == 'X':
-            binding_coords.append((x, y, z))
-        else:
-            nonbinding.append((x, y, z, atom))
-
-    neighbor_atom_types = set()
-
-    # 2) for each binding site, find the two closest real atoms
-    for bx, by, bz in binding_coords:
-        # compute squared distances to every non-dummy atom
-        dists = []
-        for x, y, z, atom in nonbinding:
-            dx, dy, dz = x - bx, y - by, z - bz
-            d2 = dx*dx + dy*dy + dz*dz
-            dists.append((d2, atom))
-        # sort by distance
-        dists.sort(key=lambda t: t[0])
-        # take the two nearest
-        for _, atom in dists[:2]:
-            neighbor_atom_types.add(atom)
-
-    # 3) infer binding fragment
-    binding_fragment = None
-    if 'O' in neighbor_atom_types:
-        binding_fragment = 'CO2'
-    if 'N' in neighbor_atom_types:
-        binding_fragment = 'N2'
-
-    return binding_fragment
-
-
-def determine_cbu_formula(cbu_json):
-    from collections import defaultdict
-    atom_counts = defaultdict(int)
-
-    for k, v in cbu_json.items():
-        if v['atom'] == 'X':
-            continue
-        atom_counts[v['atom']] += 1
-
-    formula = ""
-    for elem in ['C', 'H', 'N', 'O']:
-        if elem in atom_counts and atom_counts[elem] > 0:
-            formula += f"{elem}{atom_counts.pop(elem)}"
-
-    for elem in sorted(atom_counts):
-        formula += f"{elem}{atom_counts.pop(elem)}"
-
-    return formula
 
 def mol_formula(mol):
     """
