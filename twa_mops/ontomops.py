@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Set
 from scipy.optimize import fsolve
 from datetime import datetime
 import plotly.express as px
@@ -680,63 +680,6 @@ class MolecularFragment(BaseClass):
         return self._is_asymmetric
     
     @classmethod
-    def create_asymmetric_linker(
-        cls,
-        fragment,
-    ) -> 'MolecularFragment':
-        """
-        Create a MolecularFragment instance with asymmetric properties.
-        """
-        from molecular_fragment_utils import create_swapped_dummy_atoms_mol
-
-        if not fragment.is_linker_fragment or not fragment.is_asymmetric:
-            return None
-        
-        
-        dummy_atomic_number = list(fragment.hasDummyAtomicNumber)[0]
-        charge = fragment.charge
-        molecular_weight = fragment.molecular_weight
-        molecular_formula = fragment.molecular_formula
-        mol_file_path = list(fragment.hasGeometry)[0].geometry_file
-        new_file_path = os.path.splitext(mol_file_path)[0] + '_asymmetric.mol'
-
-        data = create_swapped_dummy_atoms_mol(
-            mol_file_path,
-            new_file_path,
-            dummy_atomic_number=dummy_atomic_number
-        )
-
-
-        # Create a geometry object
-        pts = []
-        for atom in data["atoms"]:
-            pt = Point(
-                x=atom["coordinate_x"],
-                y=atom["coordinate_y"], 
-                z=atom["coordinate_z"],
-                label=atom["label"]
-            )
-            pts.append(pt)
-
-        geo = ontospecies.Geometry(
-            hasPoints=pts,
-            hasGeometryFile=mol_file_path,
-        )
-
-        return cls(
-            instance_iri=cls.init_instance_iri(),
-            hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
-            hasMolecularWeight=ontospecies.MolecularWeight(hasValue=om.Measure(hasNumericalValue=molecular_weight, hasUnit=om.gramPerMole)),
-            hasMolecularFormula=molecular_formula,
-            hasGeometry=geo,
-            hasFragmentType=fragment.hasFragmentType,  # Use the same fragment type as the original fragment
-            hasSmiles=data["smiles"],
-            hasDummyAtomicNumber=dummy_atomic_number,
-            IsIsomerOf={fragment}  # Link to the original fragment as an isomer
-        )
-
-    
-    @classmethod
     def from_mol_file(
         cls, 
         mol_file_path: str, 
@@ -764,9 +707,9 @@ class MolecularFragment(BaseClass):
         for atom in data["atoms"]:
             pt = Point(
                 x=atom["coordinate_x"],
-                y=atom["coordinate_y"],
+                y=atom["coordinate_y"], 
                 z=atom["coordinate_z"],
-                label=atom["label"],
+                label=atom["label"]
             )
             pts.append(pt)
 
@@ -789,43 +732,20 @@ class MolecularFragment(BaseClass):
     
 
 ############## ChemicalBuildingUnit Template ##############
-# class MolecularFragmentTemplate(BaseClass):
-#     hasOrder : HasFragmentOrder[int]
-#     hasConstraint : HasFragmentOrder[str]
 ## Object properties
 HasFragmentConstraint = ObjectProperty.create_from_base('HasFragmentConstraint', OntoMOPs)
-# HasFragmentPositions = ObjectProperty.create_from_base('HasFragmentPositions', OntoMOPs)
 HasCBUFragmentTemplate = ObjectProperty.create_from_base('HasCBUFragmentTemplate', OntoMOPs)
 HasChemicalBuildingUnitTemplate = ObjectProperty.create_from_base('HasChemicalBuildingUnitTemplate', OntoMOPs)
 HasChemicalBuildingUnitFragment = ObjectProperty.create_from_base('HasChemicalBuildingUnitFragment', OntoMOPs)
 
 ## Data properties
 HasFragmentPositions = DatatypeProperty.create_from_base('HasFragmentPositions', OntoMOPs)
-
-# class FragmentConstraint(BaseClass):
-#     """
-#     Abstract rule that must be satisfied by a MolecularFragment
-#     before it may occupy a given FragmentPosition.
-#     """
-#     rdfs_isDefinedBy = OntoMOPs
-
-#     def is_satisfied_by(self, frag: MolecularFragment) -> bool:
-#         raise NotImplementedError
-
-#     # small helper that yields a readable message for failed checks
-#     def complain(self, frag: MolecularFragment, slot_key: str) -> str:   # <- MAY override
-#         return (f"Fragment {frag.instance_iri} does not satisfy "
-#                 f"{self.__class__.__name__} at slot '{slot_key}'.")
+HasFragmentOrientation = DatatypeProperty.create_from_base('HasFragmentOrientation', OntoMOPs)
 
 class CBUFragmentTemplate(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
     hasFragmentType: HasFragmentType[FragmentType]
     hasFragmentPositions: HasFragmentPositions[int] # really only required for linkers
-    # hasConstraint: HasFragmentConstraint[FragmentConstraint] = None
-    
-    # @property
-    # def required_type(self) -> FragmentType:
-    #     return list(self.hasFragmentType)[0]
     
     @property
     def allowed_types(self) -> tuple[FragmentType, ...]:
@@ -852,19 +772,14 @@ class CBUFragmentTemplate(BaseClass):
         return any(isinstance(t, NodeFragment) for t in self.allowed_types)
 
 
-class ChemicalBuildingUnitTemplate(BaseClass):
+class ChemicalBuildingUnitTemplate(BaseClass): #TODO rename to CBUFragmentSlot
     rdfs_isDefinedBy = OntoMOPs
-    # hasModularity: HasModularity[int]
-    # hasPlanarity: HasPlanarity[str]
-    # hasGenericBuildingUnit: HasGenericBuildingUnit[GenericBuildingUnit]
     hasGenericBuildingUnitType: HasGBUType[GenericBuildingUnitType]
-    # hasLinkerFragmentOrder: HasFragmentOrder[str]
     hasCBUFragmentTemplate: HasCBUFragmentTemplate[CBUFragmentTemplate]
 
     @property
     def gbu_type(self):
         return list(self.hasGenericBuildingUnitType)[0].label
-        # return list(list(self.hasGenericBuildingUnit)[0].hasGBUType)[0].label
 
     @property
     def all_allowed_types(self) -> Set[FragmentType]:
@@ -873,61 +788,25 @@ class ChemicalBuildingUnitTemplate(BaseClass):
         This includes all types from all CBUFragmentTemplates.
         """
         return {ft for slot in self.hasCBUFragmentTemplate for ft in slot.allowed_types}
-    
-    # @property
-    # def linker_fragment_order(self):
-    #     return list(self.hasLinkerFragmentOrder)[0]
-
-    # @property
-    # def linker_fragment_order(self) -> List[str]:
-    #     """
-    #     Returns the order of linker fragments as a list of strings.
-    #     This is derived from the hasCBUFragmentTemplate property.
-    #     """
-    #     return [
-    #         template for template in list(self.hasCBUFragmentTemplate)
-    #         if isinstance(template.required_type, LinkerFragment)
-    #     ]
-    
-    # @property
-    # def linker_fragment_order(self) -> List[str]:
-    #     """
-    #     Returns the order of linker fragments as a list of strings.
-    #     This is derived from the hasCBUFragmentTemplate property.
-    #     """
-    #     linker_templates = [
-    #         template for template in list(self.hasCBUFragmentTemplate)
-    #         if isinstance(template.required_type, LinkerFragment)
-    #     ]
-
-    #     positions = {
-    #         pos: template.required_type for template in linker_templates
-    #         for pos in template.hasFragmentPositions
-    #     }
-
-    #     return [ required_type for _, required_type in sorted(positions.items(), key=lambda x:x[0]) ]
 
     @property
-    def linker_fragment_order(self) -> Dict[int, Set[FragmentType]]:
+    def linker_fragment_order(self) -> Dict:
         """
-        For every template position that belongs to a *linker*-slot, return the
-        **set** of all fragment classes permitted there.
+        Returns a mapping of fragment positions to allowed fragment types for linker slots.
 
-        Example
-        -------
-        {0: {CarboxylateLinker, PyridylLinker},
-         2: {CarboxylateLinker}}
+        Returns:
+            Dict[int, Set[FragmentType]]: A dictionary where keys are fragment positions (int)
+            and values are sets of allowed FragmentType instances for those positions.
         """
         from collections import defaultdict
-        # pos2types: Dict[int, Set[FragmentType]] = defaultdict(set)
         pos2types = defaultdict(set)
 
         for slot in self.hasCBUFragmentTemplate:
-            if slot.is_linker_slot:                     # helper from last update
+            if slot.is_linker_slot:
                 for pos in slot.hasFragmentPositions:
                     pos2types[pos].update(slot.allowed_types)
 
-        # sort for determinism – caller can still rely on order if desired
+        # sort for determinism
         return dict(sorted(pos2types.items()))
     
     @classmethod
@@ -958,57 +837,28 @@ class ChemicalBuildingUnitTemplate(BaseClass):
         This method checks if the fragments match the required types and positions defined in the template.
         """
 
-        # ------------------------------------------------------------------
-        # 1) every template slot must be satisfied and vice-versa
+        # every template slot is satisfied by at least one fragment
+        # and every fragment matches at least one template slot
         for slot in self.hasCBUFragmentTemplate:
             if not any(slot.accepts(f) for f in fragments):
                 return False
         if not all(any(slot.accepts(f) for slot in self.hasCBUFragmentTemplate)
                    for f in fragments):
             return False
-        # ------------------------------------------------------------------
-        # 2) linker-position check using the new “sets” mapping
-        linker_sets = self.linker_fragment_order            # {pos: {types…}}
-        for pos, allowed in linker_sets.items():
-            if pos >= len(fragments):                       # fragment missing
-                return False
-            frag = fragments[pos]
-            if not frag.is_linker_fragment:                 # wrong kind of frag
-                return False
-            if frag.hasFragmentType not in allowed:         # not in allowed set
-                return False
-        # ------------------------------------------------------------------
-        return True
-
-        # # check that the set of frag types matches the set of frag types in the template
-        # required_types = {f.required_type for f in list(self.hasCBUFragmentTemplate)}
-        # provided_types = {frag.hasFragmentType for frag in fragments}
-        # if required_types != provided_types:
-        #     # raise ValueError(f"Provided fragments do not match the required types: {required_types} != {provided_types}")
-        #     return False
-        
-        # linker_fragment_order = self.linker_fragment_order
-        # # check that the linker fragment order matches the provided fragments
-        # if linker_fragment_order:
-        #     # provided_linker_fragments = [f for f in fragments if f.is_linker_fragment]
-        #     provided_linker_types = [f.hasFragmentType for f in fragments if f.is_linker_fragment]
-        #     if linker_fragment_order != provided_linker_types:
-        #         # raise ValueError(f"Provided linker fragments do not match the required order: {linker_fragment_order} != {provided_linker_types}")
-        #         return False
         
         # for the linker fragments, check that the fragment types at each position/index match
-        # for template in list(self.hasCBUFragmentTemplate):
-        #     for pos in template.hasFragmentPositions:
-        #         if pos >= len(fragments) or fragments[pos].hasFragmentType != template.required_type:
-        #             return False
-                
-                # if pos >= len(fragments):
-                #     raise ValueError(f"Fragment position {pos} exceeds the number of provided fragments {len(fragments)}.")
-                # frag = fragments[pos]
-                # if frag.hasFragmentType != template.required_type:
-                #     raise ValueError(f"Fragment at position {pos} does not match the required type: {frag.hasFragmentType} != {template.required_type}")
-        # return True
-        
+        # only need to check these as the other slots are not strictly ordered
+        linker_sets = self.linker_fragment_order
+        for pos, allowed in linker_sets.items():
+            if pos >= len(fragments):
+                return False
+            frag = fragments[pos]
+            if not frag.is_linker_fragment:
+                return False
+            if not frag.hasFragmentType & allowed:
+                return False
+
+        return True
 
         
 
@@ -1025,15 +875,14 @@ class ChemicalBuildingUnitFragment(BaseClass):
 class ChemicalBuildingUnit(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
     hasBindingDirection: HasBindingDirection[BindingDirection]
-    hasBindingSite: HasBindingSite[BindingSite]
+    hasBindingSite: Optional[HasBindingSite[BindingSite]]
     isFunctioningAs: IsFunctioningAs[GenericBuildingUnit]
     hasCharge: ontospecies.HasCharge[ontospecies.Charge]
     hasMolecularWeight: ontospecies.HasMolecularWeight[ontospecies.MolecularWeight]
-    hasGeometry: ontospecies.HasGeometry[ontospecies.Geometry]
+    hasGeometry: Optional[ontospecies.HasGeometry[ontospecies.Geometry]]
     hasCBUFormula: HasCBUFormula[str]
-    hasCBUAssemblyCenter: HasCBUAssemblyCenter[CBUAssemblyCenter]
+    hasCBUAssemblyCenter: Optional[HasCBUAssemblyCenter[CBUAssemblyCenter]]
 
-    # hasMolecularFragment: Optional[HasMolecularFragment[MolecularFragment]] = None
     hasChemicalBuildingUnitFragment: Optional[HasChemicalBuildingUnitFragment[ChemicalBuildingUnitFragment]] = None
     hasChemicalBuildingUnitTemplate: Optional[HasChemicalBuildingUnitTemplate[ChemicalBuildingUnitTemplate]] = None
     hasSmiles: Optional[HasSmiles[str]] = None
@@ -1075,6 +924,7 @@ class ChemicalBuildingUnit(BaseClass):
             bs.temporarily_blocked = False
 
     def load_geometry_from_fileserver(self, sparql_client):
+        print("loading xyz from file server")
         return list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client)
 
     def add_binding_site_and_assembly_center_from_json(
@@ -1082,9 +932,9 @@ class ChemicalBuildingUnit(BaseClass):
     ):
         with open(cbu_json_fpath, "r") as file:
             cbu_json = json.load(file)
-        binding_sides, assemb_center, atom_points = self.__class__.process_geometry_json(
+        binding_sites, assemb_center, atom_points = self.__class__.process_geometry_json(
             cbu_json, ocn, binding_fragment, gbu_type, metal_site)
-        self.hasBindingSite = binding_sides
+        self.hasBindingSite = binding_sites
         self.hasCBUAssemblyCenter = assemb_center
 
     @staticmethod
