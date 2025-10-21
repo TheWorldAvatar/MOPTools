@@ -1259,8 +1259,81 @@ class ChemicalBuildingUnit(BaseClass):
             hasCBUAssemblyCenter=assemb_center,
             hasChemicalBuildingUnitFragment=cbu_frags,
             hasSmiles=cbu_smiles,
+        )
+    
+    @classmethod
+    def from_molecular_fragments_smiles(
+        cls,
+        fragments: List[MolecularFragment],
+        gbu_type: str,
+        gbu: Optional[GenericBuildingUnit] = None,
+        direct_binding: bool = True,
+        metal_site: bool = False,
+        linker_first_dummy_idxs = None,
+        **kwargs
+    ) -> 'ChemicalBuildingUnit':
+        from molecular_fragment_utils import smiles_assemble_fragments_to_cbu
+
+        binding_fragments = [f for f in fragments if f.is_binding_fragment]
+        linker_fragments = [f for f in fragments if f.is_linker_fragment]
+        node_fragments = [f for f in fragments if f.is_node_fragment]
+
+        cbu_frags = [
+            ChemicalBuildingUnitFragment(
+                hasMolecularFragment=frag,
+                hasFragmentPositions=[i for i in range(len(fragments)) if fragments[i] == frag]
+            ) for frag in set(fragments)
+        ]
+
+        if not direct_binding:
+            raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
+        if not binding_fragments: # what if wanted to assemble only linker and node fragments e.g. 4-planar cores? wouldnt' be a cbu, use the frag util functions, same for substituting frags
+            raise ValueError("The list of binding fragments is empty.")
+
+        # TODO: reset all fragments to have the same dummy atomic number (maybe when load from mol file)
+        dummy_atomic_number = {list(x.hasDummyAtomicNumber)[0] for x in fragments}
+        if len(dummy_atomic_number) != 1:
+            raise ValueError("Currently all fragments must have the same dummy atomic number.")
+        
+        dummy_atomic_number = list(dummy_atomic_number)[0]
+        
+        binding_group = binding_fragments[0]
+        ocn = list(binding_group.fragment_type.hasOuterCoordinationNumber)[0]
+        binding_atoms = list(binding_group.fragment_type.hasBindingFragment)[0]
+
+        cbu_smiles, cbu_formula = smiles_assemble_fragments_to_cbu(
+            linker_smiles=[x.smiles for x in linker_fragments],
+            binding_smiles = [x.smiles for x in binding_fragments][0],
+            node_smiles = [x.smiles for x in node_fragments][0] if node_fragments else None,
+            dummy_atomic_number=dummy_atomic_number,
+            linker_first_dummy_idxs=linker_first_dummy_idxs,
+            **kwargs
+        )
+
+        cbu_charge = 0
+        cbu_mw = 0
+        
+        for frag in fragments:
+            cbu_charge += frag.charge
+            cbu_mw += frag.molecular_weight
+            
+        # instantiate actual CBU
+        return cls(
+            instance_iri=cls.init_instance_iri(),
+            # TODO hasBindingDirection should be modified once side-binding is implemented
+            hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
+            hasBindingSite=None,
+            isFunctioningAs=gbu if gbu is not None else set(),
+            hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=cbu_charge, hasUnit=om.elementaryCharge)),
+            hasMolecularWeight=ontospecies.MolecularWeight(hasValue=om.Measure(hasNumericalValue=cbu_mw, hasUnit=om.gramPerMole)),
+            hasGeometry=None,
+            hasCBUFormula=cbu_formula,
+            hasCBUAssemblyCenter=None,
+            hasChemicalBuildingUnitFragment=cbu_frags,
+            hasSmiles=cbu_smiles,
             # hasMolecularFragment= linker_fragments + binding_fragments + node_fragments, # [*linker_fragments, *binding_fragments, *node_fragments],
         )
+
 
     @classmethod
     def combinations_from_template_and_fragments(
