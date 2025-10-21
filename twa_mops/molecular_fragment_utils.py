@@ -672,11 +672,13 @@ def mol_formula(mol):
     
 
 def insert_carboxylate_binding_dummy_atoms(mol, conf, data):
-    #patt = Chem.MolFromSmarts('C(=O)[O-]')
-    patt = Chem.MolFromSmarts('C(=O)[O]')
+    """
+    Update CBU JSON dict to include dummy atoms for carboxylate binding sites.
+    """
+
+    patt = Chem.MolFromSmarts('C(=O)[O-]')
+    # patt = Chem.MolFromSmarts('C(=O)[O]')
     matches = mol.GetSubstructMatches(patt)
-    #if len(matches) != 2:
-    #    return None
 
     for c_idx, o1_idx, o2_idx in matches:
         p1 = conf.GetAtomPosition(o1_idx)
@@ -705,17 +707,18 @@ def insert_carboxylate_binding_dummy_atoms(mol, conf, data):
         }
 
 def insert_pyrazole_binding_dummy_atoms(mol, conf, data):
+    """
+    Update CBU JSON dict to include dummy atoms for pyrozolate binding sites.
+    """
     patt2 = Chem.MolFromSmarts('c1cn[n-]c1')
     matches = mol.GetSubstructMatches(patt2)
-    #if len(matches)>0:
-    #    return None
 
     for c1_idx, c2_idx, n1_idx, n2_idx, c3_idx in matches:
         p1 = conf.GetAtomPosition(n1_idx)
         p2 = conf.GetAtomPosition(n2_idx)
         mx, my, mz = (p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0, (p1.z + p2.z) / 2.0
 
-        # vector from carboxylate C to O midpoint
+        # vector from carbon opposite nitrogens to midpoint of nitrogens
         c_pos = conf.GetAtomPosition(c1_idx)
         vx = mx - c_pos.x
         vy = my - c_pos.y
@@ -738,11 +741,9 @@ def insert_pyrazole_binding_dummy_atoms(mol, conf, data):
 
 def cbu_mol_to_json_dict(mol: Chem.Mol, conf: Chem.Conformer) -> dict:
     """
-    Embed & optimize `mol`, deprotonate –COOH → –COO⁻, enforce coplanar binding
-    groups, then collect per-atom & per-bond data into a JSON-serializable dict.
+    Convert an RDKit Mol and Conformer into a CBU JSON dict.
     """
 
-    # 4) build JSON dict
     cbu_json = {}
     idx2uid = {atom.GetIdx(): str(uuid.uuid4()) for atom in mol.GetAtoms()}
 
