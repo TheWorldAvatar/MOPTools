@@ -239,135 +239,141 @@ def _get_single_dummy_and_neighbor(mol: Chem.Mol, dummy_idx: int):
     nbr = bond.GetBeginAtom() if bond.GetBeginAtom().GetIdx() != d_idx else bond.GetEndAtom()
     return d_idx, nbr.GetIdx(), bond.GetBondType()
 
-def _compute_rigid_transform(P_src: np.ndarray, P_dst: np.ndarray):
-    """
-    Compute the rigid transformation (rotation R and translation t) that aligns
-    points P_src to points P_dst using Singular Value Decomposition (SVD).
-    Args:
-        P_src: Source points (shape: [N, 3])
-        P_dst: Destination points (shape: [N, 3])
-    Returns:    
-        R: Rotation matrix (shape: [3, 3])
-        t: Translation vector (shape: [3])
-    """
-    centroid_src = P_src.mean(axis=0)
-    centroid_dst = P_dst.mean(axis=0)
-    Q_src, Q_dst = P_src - centroid_src, P_dst - centroid_dst
-    H = Q_src.T @ Q_dst
-    U, _, Vt = np.linalg.svd(H)
-    R = Vt.T @ U.T
-    if np.linalg.det(R) < 0:
-        Vt[2, :] *= -1
-        R = Vt.T @ U.T
-    t = centroid_dst - R @ centroid_src
-    return R, t
-
 
 def reassemble_two_fragments(
-        frag1: Chem.Mol, 
-        frag2: Chem.Mol, 
-        dummy_idxs: tuple =(0, 0), 
-        sanitize: bool = False
-    ) -> tuple[Chem.Mol, tuple[int,int]]:
+    frag1: Chem.Mol, 
+    frag2: Chem.Mol, 
+    dummy_idxs: tuple =(0, 0),
+    rotation_angle_increment: float = 10.0,
+    sanitize: bool = False,
+    optimize: bool = False,
+) -> tuple[Chem.Mol, tuple[int,int]]:
     """
     Rigidly align frag2 onto frag1 via their dummy atoms, then delete both dummies
     and re-bond the two heavy neighbors. Returns one combined Chem.Mol.
+
+    TODO: only calculate transformation once, then try multiple rotations about the bond axis
+
+    Args:
+        frag1: Chem.Mol
+            First fragment RDKit molecule with dummy atom(s).
+        frag2: Chem.Mol
+            Second fragment RDKit molecule with dummy atom(s).
+        dummy_idxs: tuple of int
+            Indices of which dummy atom to use in frag1 and frag2.
+            Default use the first dummy atom (index 0) in each fragment.
+        sanitize: bool
+            Whether to sanitize the final molecule.
+        optimize: bool
+            Whether to perform a quick optimization to relieve any clashes.
+
+    Returns:
+        combined_mol: Chem.Mol
+            The combined molecule after alignment, bonding, and dummy removal.
+        new_bond: tuple of int
+            The atom indices of the new bond formed between frag1 and frag2.
     """
-    # 1) Extract dummy & neighbor from frag1
+    # extract dummy and neighbor from frag1
     d1_idx, h1_idx, bond_type1 = _get_single_dummy_and_neighbor(frag1, dummy_idxs[0])
 
-    # 2) Extract dummy & neighbor from frag2
+    # extract dummy and neighbor from frag2
     d2_idx, h2_idx, bond_type2 = _get_single_dummy_and_neighbor(frag2, dummy_idxs[1])
 
-    # Choose bond type to add
-    bond_to_add = bond_type1 if bond_type1 == bond_type2 else bond_type1
-    
-    # pt = rdchem.GetPeriodicTable()
-    # r1 = pt.GetRcovalent(frag1.GetAtomWithIdx(h1_idx).GetAtomicNum())
-    # r2 = pt.GetRcovalent(frag2.GetAtomWithIdx(h2_idx).GetAtomicNum())
-    # target_dist = (r1 + r2) #/ 2.0
+    # set bond type
+    bond_order = bond_type1 # bond_order: Chem.BondType = Chem.BondType.SINGLE
 
-    # 3) Build a local frame [e1,e2,e3] at each dummy‐neighbour, and their origins.
+    # Build a local frame consisting of dummy and two nearest neighbours for each fragment
     conf1 = frag1.GetConformer()
     conf2 = frag2.GetConformer()
     o1, F1 = _get_local_frame(conf1, frag1, d1_idx, h1_idx)
     o2, F2 = _get_local_frame(conf2, frag2, d2_idx, h2_idx)
 
-    # 4) reverse the first axis on frag2 so e1_2 → -e1_2
+    # reverse the dummy to neighbour axis on frag2 so orientate frags towards each other
     F2[:, 0] *= -1
 
-    rotation_angle = 0
-    if abs(rotation_angle) > 1e-8:
-        phi = np.deg2rad(rotation_angle)
-        e2 = F2[:, 1].copy()
-        e3 = F2[:, 2].copy()
-        # right‐hand rule around e1: 
-        F2[:, 1] =  np.cos(phi) * e2 + np.sin(phi) * e3
-        F2[:, 2] = -np.sin(phi) * e2 + np.cos(phi) * e3
-
-    # 5) rotation that takes frame2 into frame1: R = F1 · F2^T
-    R = F1 @ F2.T
-
+    # Determine target distance between h1 and h2 based on covalent radii
     pt = rdchem.GetPeriodicTable()
     r1 = pt.GetRcovalent(frag1.GetAtomWithIdx(h1_idx).GetAtomicNum())
     r2 = pt.GetRcovalent(frag2.GetAtomWithIdx(h2_idx).GetAtomicNum())
     target_dist = (r1 + r2) #/ 2.0
 
-    # 6) translation to bring origins to o1
-    # t = o1 - R.dot(o2) # overlapping origins
-    t = (o1 + F1[:, 0] * target_dist) - R.dot(o2)
+    rotation_angle = 0
+    
+    while rotation_angle < 360:
+        phi = np.deg2rad(rotation_angle)
+        e2 = F2[:, 1].copy()
+        e3 = F2[:, 2].copy()
+
+        # rotate of frag2 about e1 by angle phi
+        F2[:, 1] =  np.cos(phi) * e2 + np.sin(phi) * e3
+        F2[:, 2] = -np.sin(phi) * e2 + np.cos(phi) * e3
+
+        # rotation that aligns frame2 with frame1
+        R = F1 @ F2.T
+
+        # transformation to bring origins to o1
+        t = (o1 + F1[:, 0] * target_dist) - R.dot(o2)
 
 
-    # 5) Apply (R, t) to all atoms in frag2
-    new_conf2 = Chem.Conformer(frag2.GetNumAtoms())
-    for i in range(frag2.GetNumAtoms()):
-        old_pos = np.array(conf2.GetAtomPosition(i))
-        new_pos = R.dot(old_pos) + t
-        new_conf2.SetAtomPosition(i, Chem.rdGeometry.Point3D(*new_pos))
+        # Apply (R, t) to all atoms in frag2
+        old_pos = frag2.GetConformer().GetPositions()
+        new_pos = old_pos.dot(R.T) + t 
+        new_conf2 = Chem.Conformer(frag2.GetNumAtoms())
+        for i, coords in enumerate(new_pos):
+            new_conf2.SetAtomPosition(i, Chem.rdGeometry.Point3D(*coords))
 
-    frag2_aligned = Chem.Mol(frag2)
-    frag2_aligned.RemoveAllConformers()
-    frag2_aligned.AddConformer(new_conf2, assignId=True)
+        frag2_aligned = Chem.Mol(frag2)
+        frag2_aligned.RemoveAllConformers()
+        frag2_aligned.AddConformer(new_conf2, assignId=True)
 
-    # 6) Combine
-    combined = Chem.CombineMols(frag1, frag2_aligned)
-    em = Chem.EditableMol(combined)
+        # combined molecule
+        combined = Chem.CombineMols(frag1, frag2_aligned)
+        em = Chem.EditableMol(combined)
 
-    N1 = frag1.GetNumAtoms()
-    H1_cidx = h1_idx
-    H2_cidx = h2_idx + N1
-    D1_cidx = d1_idx
-    D2_cidx = d2_idx + N1
+        # calculate indices for dummy and neighbor atoms in combined molecule
+        N1 = frag1.GetNumAtoms()
+        H1_cidx = h1_idx
+        H2_cidx = h2_idx + N1
+        D1_cidx = d1_idx
+        D2_cidx = d2_idx + N1
 
-    # 7) Add bond between H1_cidx and H2_cidx
-    em.AddBond(H1_cidx, H2_cidx, order=bond_to_add)
-    new_bond = (H1_cidx, H2_cidx)
+        # add bond between H1_cidx and H2_cidx
+        em.AddBond(H1_cidx, H2_cidx, order=bond_order)
+        new_bond = (H1_cidx, H2_cidx)
 
-    # 8) Remove dummy atoms in descending order
-    del_indices = sorted([D1_cidx, D2_cidx], reverse=True)
-    for delete_idx in del_indices:
-        em.RemoveAtom(delete_idx)
+        # remove dummy atoms in descending order
+        del_indices = sorted([D1_cidx, D2_cidx], reverse=True)
+        for delete_idx in del_indices:
+            em.RemoveAtom(delete_idx)
 
-    # for delete_idx in sorted([D1_cidx, D2_cidx], reverse=True):
-    #     em.RemoveAtom(delete_idx)
-    final_bond = list(new_bond)
-    for delete_idx in del_indices:
-        for i, idx in enumerate(final_bond):
-            if idx > delete_idx:
-                final_bond[i] -= 1
-    new_bond = tuple(final_bond)
+        final_bond = list(new_bond)
+        for delete_idx in del_indices:
+            for i, idx in enumerate(final_bond):
+                if idx > delete_idx:
+                    final_bond[i] -= 1
+        new_bond = tuple(final_bond)
 
-    # 9) Sanitize and return
-    new_mol = em.GetMol()
-    if sanitize:
-        Chem.SanitizeMol(new_mol)
-    return new_mol, new_bond
+        new_mol = em.GetMol()
+
+        if optimize or not has_nonbonded_overlaps(new_mol):
+            
+            if sanitize:
+                Chem.SanitizeMol(new_mol)
+                
+            return new_mol, new_bond
+        
+        rotation_angle += rotation_angle_increment
+    
+    raise RuntimeError(f"Cannot place frag2 without atom overlap at {rotation_angle_increment} angle increments")
 
 def _load_fragment_molecule_from_mol_block(
-        mol_block: str, 
-        dummy_atomic_number: int = None,
-        sanitize: bool = False
-    ) -> Chem.Mol:
+    mol_block: str, 
+    dummy_atomic_number: int = None,
+    sanitize: bool = False
+) -> Chem.Mol:
+    """
+    Load an RDKit molecule from a Mol File string.
+    """
     mol = Chem.MolFromMolBlock(mol_block, sanitize=sanitize)
     if mol is None:
         raise ValueError("Failed to load molecule from MolBlock.")
@@ -376,10 +382,13 @@ def _load_fragment_molecule_from_mol_block(
     return mol
 
 def _load_fragment_molecule_from_mol_file(
-        mol_file_path: str,
-        dummy_atomic_number: int = None,
-        sanitize: bool = False
-    ) -> Chem.Mol:
+    mol_file_path: str,
+    dummy_atomic_number: int = None,
+    sanitize: bool = False
+) -> Chem.Mol:
+    """
+    Load an RDKit molecule from a Mol File.
+    """
     if not os.path.exists(mol_file_path):
         raise FileNotFoundError(f"The file {mol_file_path} does not exist.")
     mol = Chem.MolFromMolFile(mol_file_path, removeHs=False, sanitize=sanitize)
