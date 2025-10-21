@@ -220,6 +220,17 @@ def reset_dummy_atom_atomic_numbers(mol: Chem.Mol, atomic_number: int):
     return rw.GetMol()
 
 def _get_single_dummy_and_neighbor(mol: Chem.Mol, dummy_idx: int):
+    """
+    Extract the specified dummy atom and its heavy neighbor from the molecule.
+
+    Returns:
+        d_idx : int
+            index of the dummy atom
+        h_idx : int
+            index of the heavy neighbor atom
+        bond_type : Chem.rdchem.BondType
+            bond type between dummy and neighbor
+    """
     dummy_atoms = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() == 0]
     if not (0 <= dummy_idx < len(dummy_atoms)):
         raise ValueError(f"Invalid dummy_idx {dummy_idx}; found {len(dummy_atoms)} dummy atoms")
