@@ -768,57 +768,139 @@ def cbu_mol_to_json_dict(mol: Chem.Mol, conf: Chem.Conformer) -> dict:
         cbu_json[idx2uid[a]]["bond"].append({"to_atom": idx2uid[b], "bond_order": order})
         cbu_json[idx2uid[b]]["bond"].append({"to_atom": idx2uid[a], "bond_order": order})
 
-    # 5) insert any additional dummies here if needed…
+    # insert any binding site dummy atoms
     insert_carboxylate_binding_dummy_atoms(mol, conf, cbu_json)
     insert_pyrazole_binding_dummy_atoms(mol, conf, cbu_json)
 
     return cbu_json
 
-from scipy.optimize import minimize
 
-def _optimize_only_fragment_torsions(
-    mol: Chem.Mol,
-    bonds: list[tuple[int,int]],
-    maxiter: int = 200
-):
-    """ Vary each dihedral around the given bonds to minimise the UFF energy. """
-    conf = mol.GetConformer()
-    # 1) Build list of (i,j,k,l) dihedral‐tuples
-    dihedrals = []
-    for a, b in bonds:
-        # pick one neighbor on each side
-        nbrs_a = [n.GetIdx() for n in mol.GetAtomWithIdx(a).GetNeighbors() if n.GetIdx()!=b]
-        nbrs_b = [n.GetIdx() for n in mol.GetAtomWithIdx(b).GetNeighbors() if n.GetIdx()!=a]
-        if not nbrs_a or not nbrs_b:
-            continue
-        dihedrals.append((nbrs_a[0], a, b, nbrs_b[0]))
+def reassemble_two_smiles(
+    smi1: str,
+    smi2: str,
+    dummy_atomic_number: int = 68,
+    dummy_idxs: tuple =(0, 0),
+    bond_order: Chem.BondType = Chem.BondType.SINGLE
+) -> Chem.Mol:
+    """
+    Take two fragments encoded as SMILES, remove the dummies and connect 
+    the two fragments by a new bond between the two neighbors.
 
-    if not dihedrals:
-        return
+    Args:
+      smi1:  SMILES of fragment 1
+      smi2:  SMILES of fragment 2
+      dummy_atomic_number:  atomic number used for dummy atoms in the SMILES
+      dummy_idxs:  tuple of (idx1, idx2) indicating which dummy atom to use
+                    from each fragment (0-based)
+      bond_order:  bond order to use for the new bond
 
-    # 2) Save original positions
-    orig = [tuple(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())]
+    Returns:
+      newmol:  combined Chem.Mol object
+    """
+    # load molecules
+    m1 = Chem.MolFromSmiles(smi1, sanitize=False)
+    m2 = Chem.MolFromSmiles(smi2, sanitize=False)
+    if m1 is None or m2 is None:
+        raise ValueError(f"Invalid SMILES: {smi1!r}, {smi2!r}")
 
-    # 3) Define the objective: set all the dihedrals, then compute UFF energy
-    def obj(angles):
-        # reset coords
-        for idx, pos in enumerate(orig):
-            conf.SetAtomPosition(idx, Chem.rdGeometry.Point3D(*pos))
-        # apply each trial angle
-        for θ, (i,j,k,l) in zip(angles, dihedrals):
-            rdMolTransforms.SetDihedralDeg(conf, i, j, k, l, float(θ))
-        ff = AllChem.UFFGetMoleculeForceField(mol, confId=conf.GetId())
-        return ff.CalcEnergy()
+    # find the dummy atoms in each frag
+    d1 = [a.GetIdx() for a in m1.GetAtoms() if a.GetAtomicNum() == dummy_atomic_number]
+    d2 = [a.GetIdx() for a in m2.GetAtoms() if a.GetAtomicNum() == dummy_atomic_number]
 
-    # 4) initial guess
-    init = [rdMolTransforms.GetDihedralDeg(conf, *d) for d in dihedrals]
+    d1_idx, d2_idx = dummy_idxs
+    if not (0 <= d1_idx < len(d1)):
+        raise ValueError(f"Invalid dummy_idx {d1_idx}; found {len(d1)} dummy atoms")
+    if not (0 <= d2_idx < len(d2)):
+        raise ValueError(f"Invalid dummy_idx {d2_idx}; found {len(d2)} dummy atoms")
+    
+    d1, d2 = d1[d1_idx], d2[d2_idx]
 
-    # 5) run SciPy‐Powell
-    res = minimize(obj, x0=np.array(init), method="Powell",
-                   options={"maxiter": maxiter, "disp": False})
-    # 6) apply final
-    for θ, d in zip(res.x, dihedrals):
-        rdMolTransforms.SetDihedralDeg(conf, *d, float(θ))
+    # find their (single) heavy‐atom neighbors
+    nbr1 = m1.GetAtomWithIdx(d1).GetNeighbors()[0].GetIdx()
+    nbr2 = m2.GetAtomWithIdx(d2).GetNeighbors()[0].GetIdx()
+
+    # combine graphs
+    combo = Chem.CombineMols(m1, m2)
+    em = Chem.EditableMol(combo)
+    offset = m1.GetNumAtoms()
+
+    # add the new bond
+    em.AddBond(nbr1, nbr2 + offset, order=bond_order)
+
+    # remove the dummy atoms (delete higher‐index first)
+    for idx in sorted([d1, d2 + offset], reverse=True):
+        em.RemoveAtom(idx)
+
+    newmol = em.GetMol()
+    Chem.SanitizeMol(newmol)
+    return newmol
+
+def smiles_assemble_fragments_to_cbu(
+    linker_smiles: list[str],
+    binding_smiles: str,
+    node_smiles: str = None,
+    dummy_atomic_number: int = 68,
+    linker_first_dummy_idxs: list[int] = None,
+    **kwargs
+) -> tuple[dict, str]:
+    """
+    Assemble a CBU from SMILES fragments without a geometry
+
+    Args:
+        linker_smiles:  list of SMILES strings for linker fragments
+        binding_smiles:  SMILES string for binding group fragment
+        node_smiles:  SMILES string for node fragment (optional)
+        dummy_atomic_number:  atomic number used for dummy atoms in the SMILES
+        linker_first_dummy_idxs:  index of first dummy atom connected in each linker frag
+
+    Returns:
+        cbu_smiles:  SMILES string of the assembled CBU
+        formula:  molecular formula of the assembled CBU   
+    """
+    # start from the binding group
+    cbu = Chem.MolFromSmiles(binding_smiles, sanitize=False)
+    Chem.SanitizeMol(cbu)
+
+    if linker_first_dummy_idxs is None:
+        dummy_indices = [(0,0) for _ in linker_mols]
+    else:
+        assert len(linker_first_dummy_idxs) == len(linker_smiles), "must have equal number of linker dummy indices and linker frags"
+        dummy_indices = [ (0, idx) for idx in linker_first_dummy_idxs ]
+
+    # attach each linker
+    for i, smi in enumerate(linker_smiles):
+        cbu = reassemble_two_smiles(
+            Chem.MolToSmiles(cbu, canonical=True),
+            smi,
+            dummy_atomic_number=dummy_atomic_number,
+            dummy_idxs=dummy_indices[i]
+        )
+    # if no node, cap with binding group
+    if node_smiles is None:
+        cbu = reassemble_two_smiles(
+            Chem.MolToSmiles(cbu, canonical=True),
+            binding_smiles,
+            dummy_atomic_number=dummy_atomic_number
+        )
+    else: # if node, attach copies of arms onto node
+        node = Chem.MolFromSmiles(node_smiles, sanitize=False)
+        Chem.SanitizeMol(node)
+        arm_smi = Chem.MolToSmiles(cbu, canonical=True)
+        # count dummies in the node
+        n_dummies = sum(1 for a in node.GetAtoms() if a.GetAtomicNum() == dummy_atomic_number)
+        assembled = node
+        for _ in range(n_dummies):
+            assembled = reassemble_two_smiles(
+                Chem.MolToSmiles(assembled, canonical=True),
+                arm_smi,
+                dummy_atomic_number=dummy_atomic_number
+            )
+        cbu = assembled
+
+    Chem.SanitizeMol(cbu)
+    cbu_smiles = Chem.MolToSmiles(cbu, canonical=True)
+    formula = rdMolDescriptors.CalcMolFormula(cbu)
+    return cbu_smiles, formula
 
 
 
