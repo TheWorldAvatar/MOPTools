@@ -76,81 +76,13 @@ def is_asymmetric_dummy_atoms(
     
     return not smiles1 == smiles2
 
-def create_swapped_dummy_atoms_mol(
-    mol_file_path: str,
-    swapped_file_path: str,
-    dummy_atomic_number: int = 0,
-    # sanitize: bool = False,
-) -> dict:
-    """
-    Load a molecule from a .mol file and compute all of the
-    properties needed to build a MolecularFragment.
-    Returns a dict with keys:
-      - mol
-      - charge
-      - molecular_weight
-      - molecular_formula
-      - atom_data
-      - smiles
-    """
-
-    if not os.path.exists(mol_file_path):
-        raise FileNotFoundError(f"The file {mol_file_path} does not exist.")
-    
-    mol = Chem.MolFromMolFile(mol_file_path, removeHs=False, sanitize=False)
-    mol.UpdatePropertyCache(strict=False)
-    if mol is None:
-        raise ValueError(f"Failed to load molecule from {mol_file_path}.")
-    
-    dummy_atoms = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() == dummy_atomic_number]
-    if len(dummy_atoms) != 2:
-        raise ValueError("Not exactly two dummy atoms")
-    
-    # swap dummy atom indices
-    d1, d2 = dummy_atoms
-    new_order = list(range(mol.GetNumAtoms()))
-    new_order[d1], new_order[d2] = new_order[d2], new_order[d1]
-    
-    mol = Chem.RenumberAtoms(mol, new_order)
-
-    Chem.MolToMolFile(
-        mol,
-        swapped_file_path,
-    )
-
-    conf = mol.GetConformer()
-
-    atoms = []
-    for atom in mol.GetAtoms():
-        pos = conf.GetAtomPosition(atom.GetIdx())
-        atoms.append({
-            'label': atom.GetSymbol(),
-            'coordinate_x': pos.x,
-            'coordinate_y': pos.y,
-            'coordinate_z': pos.z,
-        })
-
-    smiles = Chem.MolToSmiles(
-        Chem.RemoveHs(mol),
-        canonical=True
-    )
-
-    return {
-        'mol': mol,
-        'atoms': atoms,
-        'smiles': smiles,
-    }
-
-
-
-
 def load_molecular_fragment_from_mol_file( #TODO change to mol file content/str so works with local and remote
     mol_file_path: str,
     dummy_atomic_number: int = 0,
+    sanitize=True,
 ) -> dict:
     """
-    Load a molecule from a .mol file and compute all of the
-    properties needed to build a MolecularFragment.
+    Load a molecule from a .mol file and compute properties.
     Returns a dict with keys:
       - mol
       - charge
@@ -163,7 +95,7 @@ def load_molecular_fragment_from_mol_file( #TODO change to mol file content/str 
     if not os.path.exists(mol_file_path):
         raise FileNotFoundError(f"The file {mol_file_path} does not exist.")
     
-    mol = Chem.MolFromMolFile(mol_file_path, removeHs=False, sanitize=False)
+    mol = Chem.MolFromMolFile(mol_file_path, removeHs=False, sanitize=sanitize)
     mol.UpdatePropertyCache(strict=False)
     if mol is None:
         raise ValueError(f"Failed to load molecule from {mol_file_path}.")
