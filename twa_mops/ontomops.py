@@ -267,7 +267,7 @@ class AssemblyModel(BaseClass):
                     hasX=am_json[i]['X'],
                     hasY=am_json[i]['Y'],
                     hasZ=am_json[i]['Z'],
-                    hasGBUConnectingPoint=[connecting_point_dict[d] for d in am_json[i]['ClosestDummies']]
+                    hasGBUConnectingPoint=[connecting_point_dict[d] for d in am_json[i]['ClosestDummies']] # gbu_type_label=am_json[i]['Label']
                 )
                 if am_json[i]['Label'] in coordinate_point_dict:
                     coordinate_point_dict[am_json[i]['Label']].append(coord)
@@ -400,8 +400,8 @@ class BindingSite(BaseClass):
         sorted_atoms = self.binding_coordinates.rank_distance_to_points(atoms)
         all_binding_atoms = []
         for atom, num in counts.items():
-            all_binding_atoms.extend([a for a in sorted_atoms if a.label == atom][:num])
-        return all_binding_atoms
+            all_binding_atoms.extend([a for a in sorted_atoms if a.label == atom][:num]) # assuming that the binding fragment atoms will be first in the atoms sorted by distance from the dummy atom
+        return all_binding_atoms # list of points objects
 
     @staticmethod
     def compute_assembly_center_from_binding_sites(
@@ -544,7 +544,6 @@ class CBUAssemblyCenter(CoordinatePoint):
 
 
 ################# Molecular Fragments #################
-
 ## Object properties
 HasFragmentType = ObjectProperty.create_from_base('HasFragmentType', OntoMOPs)
 HasMolecularFragment = ObjectProperty.create_from_base('HasMolecularFragment', OntoMOPs)
@@ -562,6 +561,7 @@ IsLinearFragment = DatatypeProperty.create_from_base('IsLinearFragment', OntoMOP
 IsCyclicFragment = DatatypeProperty.create_from_base('IsCyclicFragment', OntoMOPs)
 HasNumDummyAtoms = DatatypeProperty.create_from_base('HasNumDummyAtoms', OntoMOPs)
 HasFragmentOrder = DatatypeProperty.create_from_base('HasFragmentOrder', OntoMOPs)
+
 
 class FragmentType(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
@@ -584,7 +584,6 @@ class LinkerFragment(FragmentType):
     # Indicates whether the linker fragment is cyclic (True) or acyclic (False).
     isCyclic: Optional[IsLinearFragment[bool]] = None
     isLinear: Optional[IsCyclicFragment[bool]] = None
-    hasSideChainFragments: Optional[HasSideChainFragment[SideChainFragment]] = None
     hasNumDummyAtoms: HasNumDummyAtoms[int] = 2
     isIsomerOf: Optional[IsIsomerOf[LinkerFragment]] = None
 
@@ -608,6 +607,7 @@ class MolecularFragment(BaseClass):
     hasFragmentType: HasFragmentType[FragmentType]
     hasSmiles: HasSmiles[str]
     hasDummyAtomicNumber: HasDummyAtomicNumber[int]
+    hasSideChainFragments: Optional[HasSideChainFragment[MolecularFragment]] = None
 
     @property
     def charge(self):
