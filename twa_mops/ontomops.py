@@ -327,10 +327,11 @@ class AssemblyModel(BaseClass):
 
     @property
     def pairs_of_connected_gbus(self) -> Dict:
+        # sort so always use the same when calculating the scaling factor since otherwise in cases where not equal will get varying scaling factor
         pairs = {}
-        for cc in self.hasGBUCoordinateCenter:
+        for cc in sorted(self.hasGBUCoordinateCenter, key=lambda x: x.instance_iri):
             cc: GBUCoordinateCenter
-            cps = list(cc.hasGBUConnectingPoint)
+            cps = sorted(list(cc.hasGBUConnectingPoint), key=lambda x: x.instance_iri)
             for cp in cps:
                 if cp.instance_iri not in pairs:
                     pairs[cp.instance_iri] = [cc]
@@ -420,9 +421,11 @@ class BindingSite(BaseClass):
             # to find the assembly center of the CBU
             # even the assembly center is overshooting from the molecule
             # the sin/cos calculations will make sure its coordinates is transformed correctly
-            cbu_binding_sites_plane = Plane.fit_from_points(lst_binding_points)
-            cbu_binding_sites_circumcenter = Point.fit_circle_2d(lst_binding_points)[0]
             cbu_geo_center = Point.centroid(atom_points)
+            #cbu_binding_sites_plane = Plane.fit_from_points(lst_binding_points)# positive_ref_point=cbu_geo_center)
+            cbu_binding_sites_plane = Plane.fit_from_points(lst_binding_points, positive_ref_point=cbu_geo_center)
+            cbu_binding_sites_circumcenter = Point.fit_circle_2d(lst_binding_points)[0]
+
             line = Line(point=cbu_binding_sites_circumcenter, direction=cbu_binding_sites_plane.normal)
             cbu_assemb_center = line.project_point(cbu_geo_center)
         else:
@@ -446,6 +449,28 @@ class BindingSite(BaseClass):
                         avg_O = Point.mid_point(*closest_two_O)
                         v_dct[bs.instance_iri] = {'avg_O': avg_O, 'closest_C': closest_C, 'line': Line.from_two_points(start=avg_O, end=closest_C)}
                         lst_pts_for_plane.extend([closest_C, avg_O])
+                    # find the plane from these points
+                    plane = Plane.fit_from_points(lst_pts_for_plane)
+                    # find the intersection of these lines when they are projected on the plane
+                    proj_lines = [v['line'] for v in v_dct.values()]
+                    intersection = plane.find_intersection_of_lines_projected(*proj_lines)
+                    # use the intersection and two binding site to form the plane
+                    plane_of_bs = Plane.from_three_points(pt1=intersection, pt2=lst_binding_points[0], pt3=lst_binding_points[1])
+                    perpendicular_bisector = plane_of_bs.find_perpendicular_bisector_on_plane(*lst_binding_points)
+                    cbu_assemb_center = perpendicular_bisector.project_point(intersection)
+                elif binding_fragment == BINDING_FRAGMENT_N2:
+                    # first find the closest two O atoms and the C atoms for each binding sites
+                    v_dct = {}
+                    lst_pts_for_plane = []
+                    for bs in lst_binding_sites:
+                        bp: Point = bs.binding_coordinates
+                        ranked_atoms = bp.rank_distance_to_points(atom_points)
+                        closest_two_N = [a for a in ranked_atoms if a.label == 'N'][:2]
+                        third_C = [a for a in ranked_atoms if a.label == 'C'][2]
+                        # find the average of the O atoms and use it to form line with the closest C atom
+                        avg_N = Point.mid_point(*closest_two_N)
+                        v_dct[bs.instance_iri] = {'avg_N': avg_N, 'third_C': third_C, 'line': Line.from_two_points(start=avg_N, end=third_C)}
+                        lst_pts_for_plane.extend([third_C, avg_N])
                     # find the plane from these points
                     plane = Plane.fit_from_points(lst_pts_for_plane)
                     # find the intersection of these lines when they are projected on the plane
@@ -494,27 +519,39 @@ class GBUCoordinateCenter(CoordinatePoint):
     @property
     def distance_to_am_center(self):
         return self.coordinates.get_distance_to(Point(x=0, y=0, z=0))
-
+    
     @property
     def vector_to_connecting_point_plane(self):
-        # TODO add safeguards for str IRIs
-        connecting_points = [p.coordinates for p in self.hasGBUConnectingPoint]
+        """
+        Normal vector for the connecting-point geometry.
+        Uses the parent's GBU type via a back-reference (_parent_gbu) set during AM construction.
+        Falls back gracefully if the back-ref is missing.
+        """
+        gbu_type = list(self.hasGBUType)[0].label if self.hasGBUType else ""
+
+        _cps = sorted(list(self.hasGBUConnectingPoint), key=lambda x: x.coordinates.x)
+        connecting_points = [p.coordinates for p in _cps]
+
         if len(connecting_points) < 3:
             line = Line.from_two_points(start=connecting_points[0], end=connecting_points[1])
-            if line.is_point_on_line(self.coordinates):
-                # if the center point is on the line then we take the normal vector of the line
-                # the normal vector has to be on the plane formed by the connecting points and the AM center point
-                # i.e. Point(0, 0, 0)
-                # TODO check if it is safe to make this assumption for all CBUs
+
+            if "2-linear" in gbu_type:
+                # 2-linear: use normal at AM center
                 _v = line.normal_vector_from_point_to_line(Point(x=0, y=0, z=0))
-                # flip it to point in the direction of center
-                v = Vector.from_array(-_v.as_array)
-            else:
+                v = Vector.from_array(_v.as_array)
+            elif "2-bent" in gbu_type:
+                # 2-bent (default if unknown): use normal at this coordinate center
                 v = line.normal_vector_from_point_to_line(self.coordinates)
+            else:
+                raise ValueError(f"Cannot determine GBU type for GBUCoordinateCenter; "
+                                 f"required to decide between 2-linear and 2-bent. "
+                                 f"Found: '{gbu_type}'")
         else:
-            plane = Plane.fit_from_points([bs for bs in connecting_points], Point(x=0, y=0, z=0))
+            plane = Plane.fit_from_points(connecting_points, Point(x=0, y=0, z=0))
             v = plane.normal
         return v
+
+
 
     @property
     def vector_to_farthest_connecting_point(self):
