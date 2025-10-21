@@ -909,6 +909,9 @@ def assemble_fragments_to_cbu(
         binding_group_mol_files: str,
         node_mol_files: str = None,
         dummy_atomic_number: int = 68,
+        linker_first_dummy_idxs: list[int] = None,
+        is_2bent=False,
+        binding_site_angle_offset=0.0,
         **kwargs
 ) -> tuple[dict, str]:
     """
@@ -922,6 +925,8 @@ def assemble_fragments_to_cbu(
     Returns:
         tuple[dict, str]: A tuple containing the CBU JSON dictionary and the Mol block of the assembled CBU.
     """
+
+    # load molecules
     linker_mols = [
         _load_fragment_molecule_from_mol_file(
             mol_file, 
@@ -931,12 +936,14 @@ def assemble_fragments_to_cbu(
         for mol_file in linker_mol_files
     ]
 
+    # load binding group molecule
     binding_group_mol = _load_fragment_molecule_from_mol_file(
         binding_group_mol_files, 
         dummy_atomic_number=dummy_atomic_number,
         sanitize=kwargs.get("sanitize", False)
     )
 
+    # load node molecule if provided
     node_mol = None
     if node_mol_files is not None:
         node_mol = _load_fragment_molecule_from_mol_file(
@@ -945,20 +952,25 @@ def assemble_fragments_to_cbu(
             sanitize=kwargs.get("sanitize", False)
         )
 
-    # if node_mol is None:
-    #     fragments = [ binding_group_mol ] + linker_mols + [ binding_group_mol ]
-
-    # cbu_mol = binding_group_mol
+    # start from the binding group
     cbu_mol = Chem.Mol(binding_group_mol)
     new_bonds = []
+    if linker_first_dummy_idxs is None:
+        dummy_indices = [(0,0) for _ in linker_mols]
+    else:
+        assert len(linker_first_dummy_idxs) == len(linker_mols), "must have equal number of linker dummy indices and linker frags"
+        dummy_indices = [ (0, idx) for idx in linker_first_dummy_idxs ]
 
+    # attach each linker
     for i, linker_mol in enumerate(linker_mols):
         cbu_mol, new_bond = reassemble_two_fragments(
-            cbu_mol, linker_mol, 
-            sanitize=kwargs.get("sanitize", False)
+            cbu_mol, linker_mol, dummy_idxs=dummy_indices[i],
+            sanitize=kwargs.get("sanitize", False),
+            optimize=kwargs.get("optimize", False)
         )
         new_bonds.append(new_bond)
 
+    # if no node, cap with binding group
     if node_mol is None:
         # cbu_formula = "CH"
         cbu_formula = (
@@ -967,12 +979,12 @@ def assemble_fragments_to_cbu(
         )
         cbu_mol, new_bond = reassemble_two_fragments(
             cbu_mol, binding_group_mol, 
-            sanitize=kwargs.get("sanitize", False)
+            sanitize=kwargs.get("sanitize", False),
+            optimize=kwargs.get("optimize", False)
         )
         new_bonds.append(new_bond)
-    else:
+    else: # if node, attach copies of arms onto node
         num_node_dummy_atoms = sum([1 for _c in node_mol.GetAtoms() if _c.GetAtomicNum() == 0])
-        # cbu_formula = "CH"
         cbu_formula = (
             f"({mol_formula(node_mol)})" + "(" +
             "".join([f"({mol_formula(m)})" for m in linker_mols + [binding_group_mol] ]) + ")" + 
@@ -984,38 +996,45 @@ def assemble_fragments_to_cbu(
         new_bonds = []
         node_offset = node_mol.GetNumAtoms() - num_node_dummy_atoms
         arm_offset = arm_mol.GetNumAtoms() - 1
-        for i in range(num_node_dummy_atoms):
+        for i in range(num_node_dummy_atoms): # TODO also check overlap here
+            
             _cbu_mol, new_bond = reassemble_two_fragments(
                 _cbu_mol, arm_mol,
-                sanitize=kwargs.get("sanitize", False)
+                sanitize=kwargs.get("sanitize", False),
+                optimize=kwargs.get("optimize", False)
             )
+
             # TODO : this is a quick fix to correct the atom indices, probably better way to do this
             new_bond = (new_bond[0], new_bond[1] + i + 1 - num_node_dummy_atoms ) # the idx of the frag depends on how many dummy atoms have been removed, fortuantely will always be the second index
             new_bonds.append(new_bond)
             new_bonds += [ (x[0] + node_offset + i*arm_offset, x[1] + node_offset + i*arm_offset) for x in arm_new_bonds ]
         cbu_mol = _cbu_mol
-        
 
+    cbu_conf = cbu_mol.GetConformer()
+        
     if kwargs.get("optimize", False):
-        assert kwargs.get("sanitize", False), "Must --sanitize to --optimize"
-        AllChem.UFFOptimizeMolecule(cbu_mol)
+        Chem.SanitizeMol(cbu_mol)
+        props = AllChem.MMFFGetMoleculeProperties(cbu_mol, mmffVariant="MMFF94s")
+        ff = AllChem.MMFFGetMoleculeForceField(cbu_mol, props, confId=cbu_conf.GetId())
+        ff.Minimize(maxIts=500)
     else:
         cbu_mol.UpdatePropertyCache(strict=False)
         Chem.GetSymmSSSR(cbu_mol) 
 
-    _optimize_only_fragment_torsions(cbu_mol, new_bonds)
-
-    cbu_conf = cbu_mol.GetConformer()
-
     # align binding groups to be coplanar
-    make_binding_groups_coplanar(cbu_mol, cbu_conf)
+    make_binding_groups_coplanar(
+        cbu_mol, 
+        cbu_conf,
+        is_2bent=is_2bent,
+        binding_site_angle_offset=binding_site_angle_offset,
+    )
 
     # Convert to JSON  
     cbu_json = cbu_mol_to_json_dict(cbu_mol, cbu_conf)
-    
-    cbu_mol_block = Chem.MolToMolBlock(cbu_mol, confId=0)
-    cbu_smiles = Chem.MolToSmiles(cbu_mol, canonical=True)
 
-    # binding_atoms = determine_binding_atoms_from_json(cbu_json)
+    cbu_mol_block = Chem.MolToMolBlock(cbu_mol, confId=0)
+    if kwargs.get("sanitize", False):
+        Chem.SanitizeMol(cbu_mol)
+    cbu_smiles = Chem.MolToSmiles(cbu_mol, canonical=True)
 
     return cbu_json, cbu_smiles, cbu_formula, cbu_mol_block
