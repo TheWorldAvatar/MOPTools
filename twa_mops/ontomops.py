@@ -1061,8 +1061,120 @@ class ChemicalBuildingUnit(BaseClass):
             hasCBUFormula=cbu_formula,
             hasCBUAssemblyCenter=assemb_center
         )
-    
-    
+
+    def create_cbu_from_ordered_fragments_and_template(
+        template: ChemicalBuildingUnitTemplate,
+        fragments: List[MolecularFragment],
+        linker_first_dummy_idxs: List[int] = None,
+        gbu: Optional[object] = None,
+        # gbu_type: Optional[str] = None,
+        sanitize: bool = True,
+        optimize: bool = False,
+        symmetric_linker_orientations: bool = False,
+        **kwargs
+    ) -> ChemicalBuildingUnit:
+        """
+        Assemble a single CBU from a fragment list whose order matches the template's
+        slot order (sorted by min(hasFragmentPositions)). Fragments are duplicated and
+        ordered by the global hasFragmentPositions, and linker orientation bits passed
+        per-linker-slot are expanded to per-linker-position.
+
+        Parameters
+        ----------
+        template : ChemicalBuildingUnitTemplate
+        fragments : List[MolecularFragment]
+            One fragment per slot, in the same order as the
+            template's fragment slots when sorted by hasFragmentPositions.
+        linker_first_dummy_idxs : List[int]
+            One 0/1 orientation bit per linker slot (before expansion).
+        symmetric_linker_orientations : bool
+            If True, for an asymmetric linker occupying multiple positions in a
+            single slot, the expanded bits will alternate (0,1,0,...) starting from
+            the provided slot bit.
+
+        TODO: change to providing the entire linker_first_dummy_idxs 
+        """
+
+        # canonical slot order
+        frag_templates = sorted(
+            template.hasCBUFragmentTemplate,
+            key=lambda ft: min(ft.hasFragmentPositions)
+        )
+
+        if len(fragments) != len(frag_templates):
+            raise ValueError(f"Expected {len(frag_templates)} fragments, got {len(fragments)}.")
+
+        # validate fragments against template slots
+        for frag, ft in zip(fragments, frag_templates):
+            if not ft.accepts(frag):
+                raise ValueError(f"Fragment {frag} does not match template slot {ft}.")
+
+        # get position map and produce ordered frags and slots
+        position_map = {}
+        for frag, ft in zip(fragments, frag_templates):
+            for pos in ft.hasFragmentPositions:
+                position_map[pos] = (frag, ft)
+
+        ordered_positions = sorted(position_map)
+        ordered_pairs = [position_map[p] for p in ordered_positions]
+        frags = [f for (f, _) in ordered_pairs]
+        fts   = [t for (_, t) in ordered_pairs]
+
+        # identify linker fragments and their positions in the ordered list
+        linker_info = [
+            (i, frags[i], fts[i]) for i in range(len(frags)) if frags[i].is_linker_fragment
+        ]
+
+        # map each slot to the indices it occupies within linker_info
+        slot_positions_map = {}
+        for idx_in_li, (_, frag_i, ft_i) in enumerate(linker_info):
+            slot_positions_map.setdefault(ft_i, []).append(idx_in_li)
+
+        # validate and expand the per-slot bits to per-linker-position bits
+        linker_slot_pairs = [(frag, ft) for frag, ft in zip(fragments, frag_templates) if frag.is_linker_fragment]
+
+        if linker_first_dummy_idxs is None: 
+            linker_first_dummy_idxs = [0] * len(linker_info)
+
+        if len(linker_first_dummy_idxs) != len(linker_slot_pairs):
+            raise ValueError(
+                f"Expected {len(linker_slot_pairs)} orientation bits (one per linker slot), "
+                f"got {len(linker_first_dummy_idxs)}."
+            )
+
+        for b in linker_first_dummy_idxs:
+            if b not in (0, 1):
+                raise ValueError("Orientation bits must be 0 or 1.")
+
+        # Prepare the final per-position orientation bits
+        expanded_bits = [0] * len(linker_info)
+
+        for slot_bit, (slot_frag, slot_ft) in zip(linker_first_dummy_idxs, linker_slot_pairs):
+            li_indices = slot_positions_map.get(slot_ft)
+
+            if symmetric_linker_orientations and slot_frag.is_asymmetric and len(li_indices) > 1:
+                # Alternate 0/1 starting from the provided slot_bit
+                for j, li_idx in enumerate(li_indices):
+                    expanded_bits[li_idx] = slot_bit if (j % 2 == 0) else (1 - slot_bit)
+            else:
+                # Same bit for all positions belonging to this slot
+                for li_idx in li_indices:
+                    expanded_bits[li_idx] = slot_bit
+
+        # assemble
+        cbu = ChemicalBuildingUnit.from_molecular_fragments(
+            fragments=frags,                         # one fragment per *position* in global order
+            gbu_type=template.gbu_type,
+            gbu=gbu,
+            sanitize=sanitize,
+            optimize=optimize,
+            linker_first_dummy_idxs=expanded_bits,   # one bit per *linker position* in linker_info order
+            **kwargs
+        )
+        cbu.hasChemicalBuildingUnitTemplate = {template}
+        return cbu
+
+
     
     @classmethod
     def from_molecular_fragments(
