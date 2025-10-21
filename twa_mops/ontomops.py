@@ -911,7 +911,7 @@ class ChemicalBuildingUnitFragment(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
     hasMolecularFragment: HasMolecularFragment[MolecularFragment]
     hasFragmentPositions: HasFragmentPositions[int]
-    # isFunctioningAs: IsFunctioningAs[CBUFragmentPosition]
+    hasFragmentOrientation: Optional[HasFragmentOrientation[int]] = None
     
 ####################################################
 
