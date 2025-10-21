@@ -541,6 +541,7 @@ class CBUAssemblyCenter(CoordinatePoint):
 ## Object properties
 HasFragmentType = ObjectProperty.create_from_base('HasFragmentType', OntoMOPs)
 HasMolecularFragment = ObjectProperty.create_from_base('HasMolecularFragment', OntoMOPs)
+HasSideChainFragment = ObjectProperty.create_from_base('HasSideChainFragment', OntoMOPs)
 IsIsomerOf = ObjectProperty.create_from_base('IsIsomerOf', OntoMOPs)
 
 
@@ -576,6 +577,7 @@ class LinkerFragment(FragmentType):
     # Indicates whether the linker fragment is cyclic (True) or acyclic (False).
     isCyclic: Optional[IsLinearFragment[bool]] = None
     isLinear: Optional[IsCyclicFragment[bool]] = None
+    hasSideChainFragments: Optional[HasSideChainFragment[SideChainFragment]] = None
     hasNumDummyAtoms: HasNumDummyAtoms[int] = 2
     isIsomerOf: Optional[IsIsomerOf[LinkerFragment]] = None
 
