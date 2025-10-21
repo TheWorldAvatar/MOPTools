@@ -131,6 +131,14 @@ class GenericBuildingUnit(BaseClass):
         return list(self.hasGBUType)[0].label == '4-planar'
 
     @property
+    def is_2_bent(self):
+        return list(self.hasGBUType)[0].label == GBU_TYPE_2_BENT
+
+    @property
+    def is_2_linear(self):
+        return list(self.hasGBUType)[0].label == GBU_TYPE_2_LINEAR
+
+    @property
     def modularity(self):
         return list(list(self.hasGBUType)[0].hasModularity)[0]
 
