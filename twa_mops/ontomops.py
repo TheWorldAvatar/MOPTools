@@ -305,6 +305,12 @@ class AssemblyModel(BaseClass):
         gbu1 = GenericBuildingUnit(hasGBUType=gbu_type_1, hasGBUCoordinateCenter=coordinate_point_dict[gbu_type_1.label])
         gbu2 = GenericBuildingUnit(hasGBUType=gbu_type_2, hasGBUCoordinateCenter=coordinate_point_dict[gbu_type_2.label])
 
+        # assign GBU type to each GBU coordinate center so can determine how to calculate connecting point plane later
+        for _gcc in gbu1.hasGBUCoordinateCenter:
+            _gcc.hasGBUType = gbu1.hasGBUType
+        for _gcc in gbu2.hasGBUCoordinateCenter:
+            _gcc.hasGBUType = gbu2.hasGBUType
+
         return cls(
             hasGenericBuildingUnit=[gbu1, gbu2],
             hasGenericBuildingUnitNumber=[
@@ -478,6 +484,7 @@ class GBUConnectingPoint(CoordinatePoint):
 
 class GBUCoordinateCenter(CoordinatePoint):
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
+    hasGBUType: Optional[HasGBUType[GenericBuildingUnitType]] = None
 
     @property
     def vector_from_am_center(self) -> Vector:
