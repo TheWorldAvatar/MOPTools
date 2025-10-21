@@ -155,41 +155,62 @@ def load_molecular_fragment_from_mol_file( #TODO change to mol file content/str 
 
 def _get_local_frame(conf, mol: Chem.Mol, dummy_idx: int, nbr_idx: int):
     """
-    Build a right-handed orthonormal frame at the neighbour atom:
-      origin = coords[nbr_idx]
-      e1 = (coords[dummy_idx] - coords[nbr_idx]) normalized
-      pick any other atom bonded to nbr_idx (≠ dummy_idx) as nbr2_idx
-      temp = coords[nbr2_idx] - coords[nbr_idx]
-      e2 = (temp - (temp·e1)e1) normalized
-      e3 = e1 × e2
-    Returns (origin, 3×3 matrix [e1,e2,e3]).
+    Build a right-handed orthonormal frame consisting of the dummy atom
+    and the two nearest neighbours
+
+    Returns:
+        o : (3,) float array
+            origin at neighbour atom
+        frame : (3,3) float array
+            columns are e1, e2, e3 unit vectors
     """
-    # 1) positions
+    
     pos = lambda i: np.array(conf.GetAtomPosition(i))
     o = pos(nbr_idx)
-    # 2) first axis: neighbour → dummy
+    
+    # first axis: neighbour → dummy
     v1 = pos(dummy_idx) - o
     e1 = v1 / np.linalg.norm(v1)
-    # 3) find a second neighbour of nbr_idx
+    
+    # find a second neighbour of nbr_idx
     nbr2_idx = None
-    for b in mol.GetAtomWithIdx(nbr_idx).GetBonds():
+    for b in mol.GetAtomWithIdx(nbr_idx).GetBonds(): # TODO check canonical ranking of neighbours
         idx = b.GetOtherAtomIdx(nbr_idx)
         if idx != dummy_idx:
             nbr2_idx = idx
             break
     if nbr2_idx is None:
         raise ValueError(f"No second neighbour found for atom {nbr_idx}")
-    # 4) second axis: project out component along e1
+    
+    # second axis: project out component along e1
     v_temp = pos(nbr2_idx) - o
     v2 = v_temp - np.dot(v_temp, e1) * e1
-    e2 = v2 / np.linalg.norm(v2)
-    # 5) third axis
-    e3 = np.cross(e1, e2)
-    return o, np.vstack((e1, e2, e3)).T
+    norm_v2 = np.linalg.norm(v2)
 
-    
+
+    # check for colinearity
+    if norm_v2 < 1e-6:
+        # colinear, pick a vector not parallel to e1
+        arb = np.array([1.0, 0.0, 0.0])
+        if abs(np.dot(arb, e1)) > 0.9:
+            arb = np.array([0.0, 1.0, 0.0])
+        # form a perpendicular axis
+        e2 = np.cross(e1, arb)
+        e2 /= np.linalg.norm(e2)
+    else:
+        # not colinear
+        e2 = v2 / norm_v2
+
+    # third axis, cross product of first two
+    e3 = np.cross(e1, e2)
+
+    frame = np.vstack((e1, e2, e3)).T
+    return o, frame
 
 def reset_dummy_atom_atomic_numbers(mol: Chem.Mol, atomic_number: int):
+    """
+    Reset all dummy atoms with the specified atomic number to atomic number 0.
+    """
     rw = Chem.RWMol(mol)
     for atom in rw.GetAtoms():
         if atom.GetAtomicNum() == atomic_number:
