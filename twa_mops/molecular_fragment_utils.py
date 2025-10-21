@@ -5,13 +5,46 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, rdchem, rdMolTransforms, rdMolDescriptors, Descriptors
 from scipy.optimize import minimize
 
-
 PERIODIC_TABLE = rdchem.GetPeriodicTable()
 
+def has_nonbonded_overlaps(
+    mol: Chem.Mol,
+    threshold_factor: float = 1.2
+) -> bool:
+    """check for overlap between non-bonded atoms in a molecule"""
+    from rdkit.Chem import rdmolops
 
-def is_asymmetric_dummy_atoms(smiles: str, dummy_atomic_number: int = 0) -> bool:
+    conf = mol.GetConformer()
+    n = mol.GetNumAtoms()
+
+    # covalent radii for each atom
+    radii = np.array([ # use van der Waals?
+        PERIODIC_TABLE.GetRcovalent(atom.GetAtomicNum())
+        # PERIODIC_TABLE.GetRvdw(atom.GetAtomicNum())
+        for atom in mol.GetAtoms()
+    ])
+
+    # adjacency matrix with masked out bonded pairs
+    adj = Chem.GetAdjacencyMatrix(mol, useBO=False)
+    mask = (adj == 0)
+    np.fill_diagonal(mask, False)
+
+    # distance matrix
+    D = rdmolops.Get3DDistanceMatrix(mol, confId=conf.GetId())
+
+    # threshold matrix
+    T = threshold_factor * (radii[:, None] + radii[None, :])
+
+    return bool(np.any((D < T) & mask))
+
+
+
+def is_asymmetric_dummy_atoms(
+    smiles: str,
+    dummy_atomic_number: int = 0
+) -> bool:
     """
-    Given a SMILES string, check if it contains exactly two dummy atoms (atomicNum == 0)
+    Given a SMILES string, check if it contains exactly two dummy atoms
     and whether they are asymmetric based on their connectivity.
     Returns True if asymmetric, False if symmetric or not applicable.
     """
@@ -25,6 +58,7 @@ def is_asymmetric_dummy_atoms(smiles: str, dummy_atomic_number: int = 0) -> bool
         return False
 
     d1, d2 = dummy_atoms
+
     # Create two temporary copies to assign atom maps and generate SMILES
     tmp1 = Chem.Mol(mol)
     for atom in tmp1.GetAtoms():
