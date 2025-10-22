@@ -786,7 +786,7 @@ HasChemicalBuildingUnitFragment = ObjectProperty.create_from_base('HasChemicalBu
 HasFragmentPositions = DatatypeProperty.create_from_base('HasFragmentPositions', OntoMOPs)
 HasFragmentOrientation = DatatypeProperty.create_from_base('HasFragmentOrientation', OntoMOPs)
 
-class CBUFragmentTemplate(BaseClass):
+class CBUFragmentTemplate(BaseClass): #TODO rename to CBUFragmentSlot
     rdfs_isDefinedBy = OntoMOPs
     hasFragmentType: HasFragmentType[FragmentType]
     hasFragmentPositions: HasFragmentPositions[int] # really only required for linkers
@@ -816,7 +816,7 @@ class CBUFragmentTemplate(BaseClass):
         return any(isinstance(t, NodeFragment) for t in self.allowed_types)
 
 
-class ChemicalBuildingUnitTemplate(BaseClass): #TODO rename to CBUFragmentSlot
+class ChemicalBuildingUnitTemplate(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
     hasGenericBuildingUnitType: HasGBUType[GenericBuildingUnitType]
     hasCBUFragmentTemplate: HasCBUFragmentTemplate[CBUFragmentTemplate]
