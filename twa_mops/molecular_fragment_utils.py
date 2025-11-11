@@ -769,6 +769,8 @@ def cbu_mol_to_json_dict(mol: Chem.Mol, conf: Chem.Conformer) -> dict:
         cbu_json[idx2uid[b]]["bond"].append({"to_atom": idx2uid[a], "bond_order": order})
 
     # insert any binding site dummy atoms
+    # currently only allows for carboxylate and pyrazole binding sites
+    # TODO make this generic and allow for defining different binding sites
     insert_carboxylate_binding_dummy_atoms(mol, conf, cbu_json)
     insert_pyrazole_binding_dummy_atoms(mol, conf, cbu_json)
 
