@@ -402,10 +402,12 @@ class Plane(BaseModel):
     def normal_vector_from_point_to_plane(self, other: Point) -> Vector:
         w = Vector.from_two_points(start=other, end=self.point)
         proj = w.get_dot_product(self.normal) / self.normal.magnitude
-        if proj == 0:
+        if np.allclose(proj, 0):
             # this means the point is on the plane
             # so we return the normal vector
+            # print(f'Warning: The point {other} is on the plane {self}. Returning the normal vector as a zero vector.')
             return Vector.from_array(self.normal.as_array)
+        # print(f'Projecting point {other} onto the plane {self}. Projection distance: {proj}')
         return Vector(x=proj * self.normal.x, y=proj * self.normal.y, z=proj * self.normal.z)
 
     def project_point(self, other_point: Point) -> Point:
@@ -431,7 +433,7 @@ class Plane(BaseModel):
         mid_point = Point.mid_point(projected_point_1, projected_point_2)
         proj_line = Line.from_two_points(projected_point_1, projected_point_2)
         v = self.normal.get_cross_product(proj_line.direction)
-        if np.linalg.norm(v) == 0:
+        if np.allclose(np.linalg.norm(v), 0): #np.linalg.norm(v) == 0:
             raise ValueError(f'The two points {point1} and {point2} define a line that is perpendicular to the plane {self}. No unique perpendicular bisector exists on the plane.')
         else:
             v = v / np.linalg.norm(v)
