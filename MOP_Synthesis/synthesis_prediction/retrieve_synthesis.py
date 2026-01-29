@@ -3,6 +3,10 @@ import sys
 import twa.data_model
 import twa.data_model.base_ontology
 import twa.kg_operations
+import os
+current = os.path.dirname(os.path.realpath(__file__))
+parent = os.path.dirname(current)
+sys.path.append(parent)
 sys.path.append('..')
 import ontosyn
 import credentials
