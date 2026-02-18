@@ -14,6 +14,66 @@ MATERIAL_TO_SPECIES_PRED = "<http://www.theworldavatar.com/ontology/ontocape/mat
 PAPER1_DOI = "10.1021/jacs.2c03402"
 PAPER2_DOI = "Placeholder DOI for TWA OGM"
 
+def simple_query(mop0_label,assembled_mop_dois):
+
+        query = f"""
+        {PREFIX_ONTOMOPS}
+        {PREFIX_RDF}
+
+        SELECT DISTINCT ?MOP_x ?MOP_1 ?MOP_2 ?metalCBU_0 ?metalCBU_2 ?organicCBU_0 ?organicCBU_x
+        WHERE {{
+        ?MOP_0 mop:hasMOPFormula "{mop0_label}" ;
+                mop:hasChemicalBuildingUnit ?metalCBU_0 ;
+                mop:hasChemicalBuildingUnit ?organicCBU_0 .
+        ?metalCBU_0 mop:hasBindingSite/rdf:type mop:MetalSite .
+        ?organicCBU_0 mop:hasBindingSite/rdf:type mop:OrganicSite .
+        
+        ?MOP_x a mop:MetalOrganicPolyhedron ;
+                mop:hasChemicalBuildingUnit ?metalCBU_0 ;
+                mop:hasChemicalBuildingUnit ?organicCBU_x ;
+                mop:hasMOPFormula ?MOPLabel_x .
+        
+        ?organicCBU_x mop:hasBindingSite/rdf:type mop:OrganicSite .
+        FILTER (?organicCBU_x != ?organicCBU_0)
+
+        ?MOP_2 a mop:MetalOrganicPolyhedron ;
+                mop:hasChemicalBuildingUnit ?organicCBU_x ;
+                mop:hasChemicalBuildingUnit ?metalCBU_2 ;
+                mop:hasProvenance/mop:hasReferenceDOI ?DOI_2 ;
+                mop:hasMOPFormula ?MOPLabel_2 .
+        ?metalCBU_2 mop:hasBindingSite/rdf:type mop:MetalSite .
+        FILTER (?metalCBU_2 != ?metalCBU_0 )
+        FILTER (?DOI_2 NOT IN ({str(assembled_mop_dois)[1:-1]}))
+
+        ?MOP_1 a mop:MetalOrganicPolyhedron ;
+                mop:hasChemicalBuildingUnit ?metalCBU_2 ;
+                mop:hasChemicalBuildingUnit ?organicCBU_0 ;
+                mop:hasProvenance/mop:hasReferenceDOI ?DOI_1 ;
+                mop:hasMOPFormula ?MOPLabel_1 .
+        FILTER (?DOI_1 NOT IN ({str(assembled_mop_dois)[1:-1]}))
+
+        }}
+        """
+
+        return query
+
+def getSynthesis(mop):
+        query = f"""
+        {PREFIX_ONTOSYN}
+
+        SELECT DISTINCT ?chemSyn
+        WHERE {{
+        ?chemOut syn:isRepresentedBy <{mop}> .
+        ?chemTrans syn:hasChemicalOutput ?chemOut ;
+                        syn:isDescribedBy ?chemSyn .
+        ?chemSyn a syn:ChemicalSynthesis ;
+                syn:hasSynthesisStep ?step .
+        }}
+        """
+
+        return query
+
+
 def construct(mop0,solvent_via_os=False,criteria=False):
 
         if solvent_via_os:
