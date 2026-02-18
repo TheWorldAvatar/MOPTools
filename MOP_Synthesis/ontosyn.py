@@ -6,6 +6,8 @@ from typing import ClassVar
 from pydantic import Field
 from rdflib.namespace import RDF
 from typing import Optional
+import om
+import ontomops
 
 class OntoSyn(BaseOntology):
     # Below fields can be set up to provide metadata for your ontology
@@ -99,20 +101,20 @@ class IsRepeated(DatatypeProperty):
     rdfs_isDefinedBy                    = OntoSyn
 class AltLabel(DatatypeProperty):
     rdfs_isDefinedBy                    = SKOS
-class HasUnit(ObjectProperty):
-    rdfs_isDefinedBy                    = OM2
+#class HasUnit(ObjectProperty):
+#    rdfs_isDefinedBy                    = OM2
 class HasOrder(DatatypeProperty):
     rdfs_isDefinedBy                    = OntoSyn
-class HasCCDCNumber(DatatypeProperty):
-    rdfs_isDefinedBy                    = OntoMOPs
-class HasMOPFormula(DatatypeProperty):
-    rdfs_isDefinedBy                    = OntoMOPs
-class HasCBUFormula(DatatypeProperty):
-    rdfs_isDefinedBy                    = OntoMOPs
-class MopAltLabel(DatatypeProperty):
-    rdfs_isDefinedBy                    = OntoMOPs
-class HasNumericalValue(DatatypeProperty):
-    rdfs_isDefinedBy                    = OM2
+#class HasCCDCNumber(DatatypeProperty):
+#    rdfs_isDefinedBy                    = OntoMOPs
+#class HasMOPFormula(DatatypeProperty):
+#    rdfs_isDefinedBy                    = OntoMOPs
+#class HasCBUFormula(DatatypeProperty):
+#    rdfs_isDefinedBy                    = OntoMOPs
+#class MopAltLabel(DatatypeProperty):
+#    rdfs_isDefinedBy                    = OntoMOPs
+#class HasNumericalValue(DatatypeProperty):
+#    rdfs_isDefinedBy                    = OM2
 class Value(DatatypeProperty):
     rdfs_isDefinedBy                    = OntoSpecies
 class HasTargetPh(DatatypeProperty):
@@ -187,8 +189,8 @@ class HasChemicalInput(ObjectProperty):
     rdfs_isDefinedBy                    = OntoSyn
 class RepresentsOccurenceOf(ObjectProperty):
     rdfs_isDefinedBy                    = OntoCapePhaseSystem
-class HasUnitOfMeasure(ObjectProperty):
-    rdfs_isDefinedBy                    = OntoCapeSystem
+#class HasUnitOfMeasure(ObjectProperty):
+#    rdfs_isDefinedBy                    = OntoCapeSystem
 class HasProperty(ObjectProperty):
     rdfs_isDefinedBy                    = OntoCapeSystem
 class ComprisesDirectly(ObjectProperty):
@@ -201,8 +203,8 @@ class ThermodynamicBehaviour(ObjectProperty):
     rdfs_isDefinedBy                    = OntoCapeMaterial
 class ReferencesMaterial(ObjectProperty):
     rdfs_isDefinedBy                    = OntoSyn
-class HasValue(ObjectProperty):
-    rdfs_isDefinedBy                    = OM2
+#class HasValue(ObjectProperty):
+#    rdfs_isDefinedBy                    = OM2
 class HasStepDuration(ObjectProperty):
     rdfs_isDefinedBy                    = OntoSyn
 class HasVesselEnvironment(ObjectProperty):
@@ -219,8 +221,8 @@ class IsDescribedBy(ObjectProperty):
     rdfs_isDefinedBy                    = OntoSyn
 class RetrievedFrom(ObjectProperty):
     rdfs_isDefinedBy                    = OntoSyn
-class HasChemicalBuildingUnit(ObjectProperty):
-    rdfs_isDefinedBy                    = OntoMOPs
+#class HasChemicalBuildingUnit(ObjectProperty):
+#    rdfs_isDefinedBy                    = OntoMOPs
 class IsUsedAsChemical(ObjectProperty):
     rdfs_isDefinedBy                    = OntoMOPs
 class HasVesselType(ObjectProperty):
@@ -251,12 +253,12 @@ class IsSuppliedBy(ObjectProperty):
 # Classes:
 class Label(DatatypeProperty):
     rdfs_isDefinedBy                    = RDFS
-class UnitOfMeasure(BaseClass):
-    rdfs_isDefinedBy                    = OM2
-class Measure(BaseClass):
-    rdfs_isDefinedBy                    = OM2
-    hasNumericalValue                   : Optional[HasNumericalValue[float]]                        = set()
-    hasUnit                             : Optional[HasUnit[UnitOfMeasure]]                          = set()
+#class UnitOfMeasure(BaseClass):
+#    rdfs_isDefinedBy                    = OM2
+#class Measure(BaseClass):
+#    rdfs_isDefinedBy                    = OM2
+#    hasNumericalValue                   : Optional[HasNumericalValue[float]]                        = set()
+#    hasUnit                             : Optional[HasUnit[UnitOfMeasure]]                          = set()
 class CharacteristicPeak(BaseClass):
     rdfs_isDefinedBy                    = OntoSpecies
     hasX1                               : Optional[HasX1[str]]                          = set()
@@ -291,7 +293,7 @@ class Element(BaseClass):
     rdfs_isDefinedBy                    = DAML
 class MassFraction(BaseClass):
     rdfs_isDefinedBy                    = OM2
-    hasValue                            : Optional[HasValue[Measure]]                       = set()
+    hasValue                            : Optional[om.HasValue[om.Measure]]                       = set()
 class ElementWeightPercentage(BaseClass):
     rdfs_isDefinedBy                    = OntoSpecies
     isReferingToElement                 : Optional[IsReferingToElement[Element]]            = set()
@@ -317,11 +319,11 @@ class Species(BaseClass):
     hasElementalAnalysis                : Optional[HasElementalAnalysis[ElementalAnalysis]]                 = set()
 class ScalarValue(BaseClass):
     rdfs_isDefinedBy                    = OntoCapeSystem
-    hasUnitOfMeasure                    : Optional[HasUnitOfMeasure[UnitOfMeasure]]                 = set()
-    hasNumericalValue                   : Optional[HasNumericalValue[float]]                        = set()
+    hasUnit                             : Optional[om.HasUnit[om.UnitOfMeasure]]                 = set()
+    hasNumericalValue                   : Optional[om.HasNumericalValue[float]]                        = set()
 class PhaseComponentConcentration(BaseClass):
     rdfs_isDefinedBy                    = OntoCapePhaseSystem
-    hasValue                            : Optional[HasValue[ScalarValue]]                           = set()
+    hasValue                            : Optional[om.HasValue[ScalarValue]]                           = set()
 class PhaseComponent(BaseClass):
     rdfs_isDefinedBy                    = OntoCapePhaseSystem
     representsOccurenceOf               : Optional[RepresentsOccurenceOf[Species]]                  = set()
@@ -350,7 +352,7 @@ class Document(BaseClass):
     doi                                 : Optional[Doi[str]]    
 class Duration(BaseClass):
     rdfs_isDefinedBy                    = OM2
-    hasValue                            : Optional[HasValue[Measure]]                               = set()
+    hasValue                            : Optional[om.HasValue[om.Measure]]                               = set()
 class VesselEnvironment(BaseClass):
     rdfs_isDefinedBy                    = OntoSyn
 class LabEquipment(BaseClass):
@@ -372,7 +374,7 @@ class SynthesisStep(BaseClass):
     hasStepDuration                     : Optional[HasStepDuration[Duration]]                       = set()
 class AmountOfSubstanceFraction(BaseClass):
     rdfs_isDefinedBy                    = OM2
-    hasValue                            : Optional[HasValue[Measure]]                               = set()
+    hasValue                            : Optional[om.HasValue[om.Measure]]                               = set()
 class ChemicalSynthesis(BaseClass):
     rdfs_isDefinedBy                    = OntoSyn  
     hasSynthesisStep                    : Optional[HasSynthesisStep[SynthesisStep]]                 = set()
@@ -381,21 +383,21 @@ class ChemicalSynthesis(BaseClass):
     hasYield                            : Optional[HasYield[AmountOfSubstanceFraction]]             = set()
     # not ideal but mostly unused:
     hasEquipment                        : Optional[HasEquipment[LabEquipment]]                      = set()
-class ChemicalBuildingUnit(BaseClass):
-    rdfs_isDefinedBy                    = OntoMOPs
-    hasCBUFormula                       : Optional[HasCBUFormula[str]]                              = set()
+#class ChemicalBuildingUnit(BaseClass):
+#    rdfs_isDefinedBy                    = OntoMOPs
+#    hasCBUFormula                       : Optional[HasCBUFormula[str]]                              = set()
     # is linked with input chemical on the miro board
-    isUsedAsChemical                    : Optional[IsUsedAsChemical[Species]]                       = set()
-class MetalOrganicPolyhedron(BaseClass):
-    rdfs_isDefinedBy                    = OntoMOPs
-    hasCCDCNumber                       : Optional[HasCCDCNumber[str]]                              = set()
-    hasMOPFormula                       : Optional[HasMOPFormula[str]]                              = set()
-    hasChemicalBuildingUnit             : Optional[HasChemicalBuildingUnit[ChemicalBuildingUnit]]   = set()
-    altLabel                            : Optional[AltLabel[str]]                                   = set()
+#    isUsedAsChemical                    : Optional[IsUsedAsChemical[Species]]                       = set()
+#class MetalOrganicPolyhedron(BaseClass):
+#    rdfs_isDefinedBy                    = OntoMOPs
+#    hasCCDCNumber                       : Optional[HasCCDCNumber[str]]                              = set()
+#    hasMOPFormula                       : Optional[HasMOPFormula[str]]                              = set()
+#    hasChemicalBuildingUnit             : Optional[HasChemicalBuildingUnit[ChemicalBuildingUnit]]   = set()
+#    altLabel                            : Optional[AltLabel[str]]                                   = set()
 
 class ChemicalOutput(Species):
     rdfs_isDefinedBy                    = OntoSyn
-    isRepresentedBy                     : Optional[IsRepresentedBy[MetalOrganicPolyhedron]]         = set()
+    isRepresentedBy                     : Optional[IsRepresentedBy[ontomops.MetalOrganicPolyhedron]]         = set()
 
 class ChemicalTransformation(BaseClass):
     rdfs_isDefinedBy                    = OntoSyn
@@ -419,12 +421,12 @@ class TemperatureUnit(BaseClass):
     rdfs_isDefinedBy                    = OM2
 class Temperature(BaseClass):
     rdfs_isDefinedBy                    = OM2
-    hasValue                            : Optional[HasValue[Measure]]                               = set()
+    hasValue                            : Optional[om.HasValue[om.Measure]]                               = set()
 class TemperatureChangeRateUnit(BaseClass):
     rdfs_isDefinedBy                    = OM2
 class TemperatureRate(BaseClass):
     rdfs_isDefinedBy                    = OM2
-    hasValue                            : Optional[HasValue[Measure]]                               = set()
+    hasValue                            : Optional[om.HasValue[om.Measure]]                               = set()
 class Crystallize(SynthesisStep):       
     rdfs_isDefinedBy                    = OntoSyn
     hasCrystallizationTargetTemperature : Optional[HasCrystallizationTargetTemperature[Temperature]]    = set()
@@ -435,7 +437,7 @@ class Stir(SynthesisStep):
     isWait                              : Optional[IsWait[bool]]                                        = set()
 class Pressure(BaseClass):       
     rdfs_isDefinedBy                    = OM2
-    hasValue                            : Optional[HasValue[Measure]]                                   = set()
+    hasValue                            : Optional[om.HasValue[om.Measure]]                               = set()
 class Dry(SynthesisStep):
     rdfs_isDefinedBy                    = OntoSyn
     hasDryingPressure                   : Optional[HasDryingPressure[Pressure]]                         = set()
@@ -443,7 +445,7 @@ class Dry(SynthesisStep):
     hasDryingAgent                      : Optional[HasDryingAgent[ChemicalInput]]                       = set()
 class Volume(BaseClass):
     rdfs_isDefinedBy                    = OM2
-    hasValue                            : Optional[HasValue[Measure]]                                   = set()
+    hasValue                            : Optional[om.HasValue[om.Measure]]                               = set()
 class Evaporate(SynthesisStep):       
     rdfs_isDefinedBy                    = OntoSyn
     hasEvaporationTemperature           : Optional[HasEvaporationTemperature[Temperature]]              = set()

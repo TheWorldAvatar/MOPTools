@@ -19,13 +19,13 @@ HasNumericalValue = DatatypeProperty.create_from_base('HasNumericalValue', OM)
 
 
 # classes
-class Unit(BaseClass):
+class UnitOfMeasure(BaseClass):
     rdfs_isDefinedBy = OM
 
-class SingularUnit(Unit):
+class SingularUnit(UnitOfMeasure):
     rdfs_isDefinedBy = OM
 
-class CompoundUnit(Unit):
+class CompoundUnit(UnitOfMeasure):
     rdfs_isDefinedBy = OM
 
 class UnitDivision(CompoundUnit):
@@ -54,7 +54,7 @@ class Diameter(Length):
 
 class Measure(BaseClass):
     rdfs_isDefinedBy = OM
-    hasUnit: HasUnit[Unit]
+    hasUnit: HasUnit[UnitOfMeasure]
     hasNumericalValue: HasNumericalValue[float]
 
 # TODO need to find a better way for defining the units
