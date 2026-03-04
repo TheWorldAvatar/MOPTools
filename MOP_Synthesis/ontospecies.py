@@ -24,6 +24,9 @@ HasGeometryFile = DatatypeProperty.create_from_base('HasGeometryFile', OntoSpeci
 
 
 # classes
+class ChemicalSpecies(BaseClass):
+    rdfs_isDefinedBy = OntoSpecies
+
 class Charge(BaseClass):
     rdfs_isDefinedBy = OntoSpecies
     hasValue: om.HasValue[om.Measure]

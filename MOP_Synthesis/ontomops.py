@@ -45,6 +45,7 @@ HasGenericBuildingUnitNumber = ObjectProperty.create_from_base('HasGenericBuildi
 HasPolyhedralShape = ObjectProperty.create_from_base('HasPolyhedralShape', OntoMOPs)
 HasProvenance = ObjectProperty.create_from_base('HasProvenance', OntoMOPs)
 IsFunctioningAs = ObjectProperty.create_from_base('IsFunctioningAs', OntoMOPs)
+IsUsedAsChemical = ObjectProperty.create_from_base('IsUsedAsChemical', OntoMOPs)
 IsNumberOf = ObjectProperty.create_from_base('IsNumberOf', OntoMOPs)
 # additions for assembler
 HasGBUConnectingPoint = ObjectProperty.create_from_base('HasGBUConnectingPoint', OntoMOPs)
@@ -525,6 +526,7 @@ class ChemicalBuildingUnit(BaseClass):
     hasBindingDirection: HasBindingDirection[BindingDirection]
     hasBindingSite: HasBindingSite[BindingSite]
     isFunctioningAs: IsFunctioningAs[GenericBuildingUnit]
+    isUsedAsChemical: IsUsedAsChemical[ontospecies.ChemicalSpecies]
     hasCharge: ontospecies.HasCharge[ontospecies.Charge]
     hasMolecularWeight: ontospecies.HasMolecularWeight[ontospecies.MolecularWeight]
     hasGeometry: ontospecies.HasGeometry[ontospecies.Geometry]
