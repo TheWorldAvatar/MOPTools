@@ -33,6 +33,14 @@ def compareBindingSites(L0,L2):
         bs2_type.append(list(bs.hasBindingFragment)[0])
     return set(bs0_type)==set(bs2_type)
 
+def getMOPSynthesis(mop):
+    syn_iri = syn_client.perform_query(queryMOPs.getSynthesis(mop))
+    if len(list(syn_iri)) != 1:
+        return False
+    else:
+        [syn] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn_iri)[0]["chemSyn"],syn_client,-1)
+        return syn
+
 def compareHeating(syn1,syn2):
     heat1 = getMainHeating(syn1)
     heat2 = getMainHeating(syn2)
@@ -45,11 +53,33 @@ def getSpecies(chemicalInput):
     material=list(chemicalInput.referencesMaterial)[0]
     thermoBehaviour=list(material.thermodynamicBehaviour)[0]
     subsystems=list(thermoBehaviour.isComposedOfSubsystem)
-
-    if len(subsystems)==1: 
-        species = list(subsystems[0].representsOccurenceOf)[0]
-
+    species = list(subsystems[0].representsOccurenceOf)[0]
     return(species)
+
+def getInputAssociatedWithCBU(syn,cbu_iri):
+    cbu = ontomops.ChemicalBuildingUnit.pull_from_kg(cbu_iri,syn_client,0)
+    cbu_spec = list(cbu[0].isUsedAsChemical)
+    for input in syn.hasChemicalInput:
+        spec = getSpecies(input)
+        if cbu_spec[0] == spec:
+            return spec
+        
+    return False
+
+def compareSolvents(syn1,syn2):
+    S1 = getSolvent(syn1)
+    S2 = getSolvent(syn2)
+    if S1 == False or S2 == False:
+        return False
+    return S1==S2 
+
+def getSolvent(syn):
+    for step in syn.hasSynthesisStep:
+        if step.__class__ == ontosyn.Dissolve:
+            solventInput = list(step.hasSolventDissolve)[0]
+            solvent = getSpecies(solventInput)
+            return solvent
+    return False
 
 def getMainHeating(syn):
     heating=[]
@@ -91,7 +121,7 @@ for mop0 in mop0_list:
     mops_query = queryMOPs.simple_query(mop0_label,assembled_mop_dois)
     predictable_mops = mops_client.perform_query(mops_query)
     
-    syn_crit = pd.DataFrame(columns=["id","MOPx","MOP1","MOP2","AM1=AM0","AM2=AMx","T2=T1","RM2=RM3"])
+    rows = []
     for tupel in predictable_mops:
         
         # This code needs to be written in this slightly awkward manner because the "pull_from_kg" method currently does not
@@ -105,24 +135,39 @@ for mop0 in mop0_list:
         [L0] = ontomops.ChemicalBuildingUnit.pull_from_kg(tupel['organicCBU_0'],mops_client,1)
         [L2] = ontomops.ChemicalBuildingUnit.pull_from_kg(tupel['organicCBU_x'],mops_client,1)
 
-        syn0_iri = syn_client.perform_query(queryMOPs.getSynthesis(mop0))
-        syn1_iri = syn_client.perform_query(queryMOPs.getSynthesis(mop1))
-        syn2_iri = syn_client.perform_query(queryMOPs.getSynthesis(mop2))
-        [syn0] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn0_iri)[0]["chemSyn"],syn_client,-1)
-        [syn1] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn1_iri)[0]["chemSyn"],syn_client,-1)
-        [syn2] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn2_iri)[0]["chemSyn"],syn_client,-1)
+        syn0 = getMOPSynthesis(mop0)
+        syn1 = getMOPSynthesis(mop1)
+        syn2 = getMOPSynthesis(mop2)
+        if syn0 == False or syn1 == False or syn2 == False:
+            continue
         
+        R_M1 = getInputAssociatedWithCBU(syn1,M1.instance_iri)
+        R_M2 = getInputAssociatedWithCBU(syn2,M1.instance_iri)
+
         crit1a = mop1.hasAssemblyModel == mop0.hasAssemblyModel
         crit1b = mop2.hasAssemblyModel == mopx.hasAssemblyModel
         crit2 = compareHeating(syn2,syn1)
-        #crit3
+        crit3 = R_M1 != False and R_M1 == R_M2
         crit4 = mop1.hasProvenance == mop2.hasProvenance
         crit5a = mop1.hasAssemblyModel == mop2.hasAssemblyModel
         crit5b = mop0.hasAssemblyModel == mopx.hasAssemblyModel
         crit6 = compareBindingSites(L0,L2)
-        
-        #crit7
+        crit7 = compareSolvents(syn2,syn0)
 
-        print("test")
+        rows.append({
+            "id" : 1,
+            "MOPx" : mopx.hasMOPFormula,
+            "MOP1" : mopx.hasMOPFormula,
+            "MOP2" : mopx.hasMOPFormula,
+            "AM1=AM0" : crit1a,
+            "AM2=AMx" : crit1b,
+            "T2=T1" : crit2,
+            "RM1=RM2" : crit3,
+            "P1=P2" : crit4,
+            "AM1=AM2" : crit5a,
+            "AM0=AMx" : crit5b,
+            "BL0=BL2": crit6,
+            "S2=S0": crit7
+        })
 
-
+    syn_crit = pd.DataFrame(rows,columns=["id","MOPx","MOP1","MOP2","AM1=AM0","AM2=AMx","T2=T1","RM1=RM2","P1=P2","AM1=AM2","AM0=AMx","BL0=BL2","S2=S0"])
