@@ -4,3 +4,7 @@
 *.csv
 *.json
 *.owl
+*.cif
+*.png
+*.cgd
+*.pyc
