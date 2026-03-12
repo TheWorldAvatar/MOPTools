@@ -71,17 +71,14 @@ target      ontomofs_vkg:_{number}_300 a ontomofs_vkg:HeatCapacity;
                     ontomofs_vkg:hasNumericalValue "{Heat_capacity@300K (J/g/K)}"^^xsd:float ;
                     ontomofs_vkg:hasTemperature "300"^^xsd:float ;
                     ontomofs_vkg:hasUncertainty "{std @ 300 K (J/g/K)}"^^xsd:float.
-
             ontomofs_vkg:_{number}_350 a ontomofs_vkg:HeatCapacity;
                     ontomofs_vkg:hasNumericalValue "{Heat_capacity@350K (J/g/K)}"^^xsd:float ;
                     ontomofs_vkg:hasTemperature "350"^^xsd:float ;
                     ontomofs_vkg:hasUncertainty "{std @ 350 K (J/g/K)}"^^xsd:float.
-
             ontomofs_vkg:_{number}_400 a ontomofs_vkg:HeatCapacity;
                     ontomofs_vkg:hasNumericalValue "{Heat_capacity@400K (J/g/K)}"^^xsd:float ;
                     ontomofs_vkg:hasTemperature "400"^^xsd:float ;
                     ontomofs_vkg:hasUncertainty "{std @ 400 K (J/g/K)}"^^xsd:float.
-
 source      SELECT number, "Heat_capacity@300K (J/g/K)", "std @ 300 K (J/g/K)", "Heat_capacity@350K (J/g/K)", "std @ 350 K (J/g/K)", "Heat_capacity@400K (J/g/K)", "std @ 400 K (J/g/K)"
             FROM "CR_data_CSD_modified_20250227"
 
