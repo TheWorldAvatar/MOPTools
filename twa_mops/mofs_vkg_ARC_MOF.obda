@@ -1,0 +1,141 @@
+[PrefixDeclaration]
+ontomofs_vkg:       https://www.theworldavatar.com/kg/ontomofs_vkg/
+rdf:                http://www.w3.org/1999/02/22-rdf-syntax-ns#
+owl:                http://www.w3.org/2002/07/owl#
+xsd:                http://www.w3.org/2001/XMLSchema#
+
+[MappingDeclaration] @collection [[
+mappingId       Topology_ARC_MOF
+target      ontomofs_vkg:topology_{mofid} a ontomofs_vkg:Topology;
+                    ontomofs_vkg:hasRCSRSymbol "{likely topology}"^^xsd:string ; 
+source      SELECT mofid, "likely topology"
+            FROM "all_topology_lists"
+
+mappingId       PoreDiameter_ARC_MOF
+target      ontomofs_vkg:PoreDiameter_{mofid} a ontomofs_vkg:PoreDiameter;
+                    ontomofs_vkg:hasPLD "{Df}"^^xsd:float;
+                    ontomofs_vkg:hasLCD "{Di}"^^xsd:float;
+                    ontomofs_vkg:hasLFPD "{Dif}"^^xsd:float.
+source      SELECT mofid, "Df", "Di", "Df"
+            FROM "geometric_properties"
+
+mappingId       SurfaceArea_ARC_MOF
+target      ontomofs_vkg:SurfaceArea_{mofid} a ontomofs_vkg:SurfaceArea;
+                    ontomofs_vkg:hasASA "{ASA}"^^xsd:float;
+                    ontomofs_vkg:hasNASA "{NASA}"^^xsd:float;
+                    ontomofs_vkg:hasGSA "{gASA}"^^xsd:float;
+                    ontomofs_vkg:hasNGSA "{gNASA}"^^xsd:float;
+                    ontomofs_vkg:hasVSA "{vASA}"^^xsd:float;
+                    ontomofs_vkg:hasNVSA "{vNASA}"^^xsd:float.
+source      SELECT mofid, "ASA", "vASA", "gASA", "NASA", "gNASA", "vNASA"
+            FROM "geometric_properties"
+
+mappingId       PoreVolume_ARC_MOF
+target      ontomofs_vkg:PoreVolume_{mofid} a ontomofs_vkg:PoreVolume;
+                    ontomofs_vkg:hasPV "{POAVA}"^^xsd:float;
+                    ontomofs_vkg:hasNPV "{NPOAVA}"^^xsd:float;
+                    ontomofs_vkg:hasGPV "{POAVAg}"^^xsd:float;
+                    ontomofs_vkg:hasNGPV "{NPOAVAg}"^^xsd:float;
+                    ontomofs_vkg:hasVF "{POAVAf}"^^xsd:float;
+                    ontomofs_vkg:hasNVF "{NPOAVAf}"^^xsd:float.
+source      SELECT mofid, "POAVA",	"POAVAf","POAVAg","NPOAVA","NPOAVAf","NPOAVAg"
+            FROM "geometric_properties"
+
+mappingId       CrystalStructure_ARC_MOF
+target      ontomofs_vkg:CrystalStructure_{mofid} a ontomofs_vkg:CrystalStructure;
+                    ontomofs_vkg:hasDensity "{Density}"^^xsd:float;
+                    ontomofs_vkg:hasUnitCellVolume "{UC_volume}"^^xsd:float.
+source      SELECT mofid, "Density", "UC_Volume"
+            FROM "geometric_properties"
+
+mappingId       Property_ARC_MOF
+target      ontomofs_vkg:Property_{mofid}_mmolguptake a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{mmol/g_uptake}"^^xsd:float;
+                    ontomofs_vkg:hasUnit "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_mmolgwc a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{mmol/g_working_capacity}"^^xsd:float;
+                    ontomofs_vkg:hasUnit "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_vvuptake a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{v/v_uptake}"^^xsd:float;
+                    ontomofs_vkg:hasUnit "cm³(STP)/cm³"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_vvwc a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{v/v_working_capacity}"^^xsd:float;
+                    ontomofs_vkg:hasUnit "cm³(STP)/cm³"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_wtuptake a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{wt%_uptake}"^^xsd:float;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_wtwc a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{wt%_working_capacity}"^^xsd:float;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_selectivity a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{selectivity}"^^xsd:float;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_purity a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{purity}"^^xsd:float;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_ssp a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{ssp}"^^xsd:float;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+            ontomofs_vkg:Property_{mofid}_afm a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasPropertyType "{process}"^^xsd:string;
+                    ontomofs_vkg:hasNumericalValue "{afm}"^^xsd:float;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasPropertyMethod "GCMC"^^xsd:string;
+source      SELECT mofid, 
+                   "process", 
+                   "mmol/g_uptake",	
+                   "mmol/g_working_capacity",
+                   "v/v_uptake",
+                   "v/v_working_capacity",
+                   "wt%_uptake",
+                   "wt%_working_capacity",
+                   "selectivity",
+                   "purity",
+                   "ssp",
+                   "afm"
+            FROM "overall_process"
+
+mappingId       Identifiers_ARC_MOF
+target      ontomofs_vkg:Identifiers_{mofid} a ontomofs_vkg:Identifiers;
+                    ontomofs_vkg:hasmofid_v1 "{mofid}"^^xsd:string;
+                    ontomofs_vkg:hasdb_id "{filename}"^^xsd:string.
+source      SELECT mofid, "filename"
+            FROM "overall_process"
+
+mappingId       MetalOrganicFramework_ARC_MOF
+target      ontomofs_vkg:MetalOrganicFramework_{mofid} a ontomofs_vkg:MetalOrganicFramework;
+                    ontomofs_vkg:hasIdentifiers ontomofs_vkg:Identifiers_{mofid};
+                    ontomofs_vkg:hasTopology ontomofs_vkg:Topology_{mofid};
+                    ontomofs_vkg:hasSourcedb "ARC_MOF 2025"^^xsd:string;
+                    ontomofs_vkg:hasPoreDiameter ontomofs_vkg:PoreDiameter_{mofid};
+                    ontomofs_vkg:hasSurfaceArea ontomofs_vkg:SurfaceArea_{mofid};
+                    ontomofs_vkg:hasPoreVolume ontomofs_vkg:PoreVolume_{mofid};
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Topology_{mofid}.
+source      SELECT mofid
+            FROM "geometric_properties"
+
+
+]]
+
