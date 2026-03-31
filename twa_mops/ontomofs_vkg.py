@@ -1,7 +1,7 @@
 from twa.data_model.base_ontology import BaseOntology, BaseClass, ObjectProperty, DatatypeProperty, KnowledgeGraph
 import os
 from typing import Optional, Dict, List, ClassVar
-from om import *
+# from om import *
 
 class OntoMOFs_vkg(BaseOntology): 
     base_url = 'https://www.theworldavatar.com/kg'
@@ -76,13 +76,17 @@ HasPropertyMethod = DatatypeProperty.create_from_base('HasPropertyMethod', OntoM
 HasUncertainty = DatatypeProperty.create_from_base('HasUncertainty', OntoMOFs_vkg)
 HasWaterStability = DatatypeProperty.create_from_base('HasWaterStability', OntoMOFs_vkg)
 HasSolvent = DatatypeProperty.create_from_base('HasSolvent',OntoMOFs_vkg)
+HasNumericalValue = DatatypeProperty.create_from_base('HasNumericalValue',OntoMOFs_vkg)
+HasUnit = DatatypeProperty.create_from_base('HasUnit',OntoMOFs_vkg)
+HasTotalEnergy = DatatypeProperty.create_from_base('HasTotalEnergy', OntoMOFs_vkg)
+HasBandGap = DatatypeProperty.create_from_base('HasBandGap',OntoMOFs_vkg)
 
 #Hasciffile = ????
 
 class Provenance(BaseClass):
     rdfs_isDefinedBy = OntoMOFs_vkg
     hasReferenceDOI: HasReferenceDOI[str]
-    hasYearPublished: HasYearPublished[str] # hasOriginalPublicationYear???????
+    hasYearPublished: Optional[HasYearPublished[str]] = None # hasOriginalPublicationYear???????
 
 class Topology(BaseClass):
     rdfs_isDefinedBy = OntoMOFs_vkg
@@ -137,10 +141,9 @@ class HeatCapacity(BaseClass):
 class Property(BaseClass):
     rdfs_isDefinedBy = OntoMOFs_vkg
     hasPropertyType: HasPropertyType[str] #This would just be like 'CO2 uptake','Selectivity_CO"/N2' etc
-    hasValue: HasValue[Measure]
-    hasUnits: HasUnit[Unit]
+    HasNumericalValue: HasNumericalValue[float]
+    hasUnits: HasUnit[str]
     isExperimental: IsExperimental[bool]
-    isSimulated: IsSimulated[bool]
     hasMethod: HasPropertyMethod[str]
     hasTemperature: Optional[HasTemperature[float]] #in K 
     hasPressure: Optional[HasPressure[float]] #in bar??? 
@@ -159,7 +162,6 @@ class Identifiers(BaseClass):
     hasmofid_v2: Optional[Hasmofid_v2[str]] = None
     hascsd_refcode: Optional[Hascsd_refcode[str]] = None
     hasdb_id: Optional[Hasdb_id[str]] = None
-    hashypo_id: Optional[Hashypo_id[str]] = None
     hasNames: Optional[HasNames[str]] = None #.............???????????
 
 class ChemicalIdentity(BaseClass):
@@ -172,7 +174,8 @@ class ChemicalIdentity(BaseClass):
 
 class ElectronicStructure(BaseClass):
     rdfs_isDefinedBy = OntoMOFs_vkg
-    pass 
+    hasTotalEnergy: Optional[HasTotalEnergy[float]] = None
+    hasBandGap: Optional[HasBandGap[float]] = None
 
 class MetalOrganicFramework(BaseClass):
     rdfs_isDefinedBy = OntoMOFs_vkg
@@ -181,12 +184,11 @@ class MetalOrganicFramework(BaseClass):
     hasLinkerSmile: Optional[HasLinkerSmile[str]] = None
     hasTopology: HasTopology[Topology]
     hasSourcedb: HasSourcedb[str]
-    hasProvenance: HasProvenance[Provenance]
+    hasProvenance: Optional[HasProvenance[Provenance]] = None
     hasPoreDiameter: HasPoreDiameter[PoreDiameter]
     hasSurfaceArea: HasSurfaceArea[SurfaceArea]
     hasPoreVolume: HasPoreVolume[PoreVolume]
-    isExperimental: IsExperimental[bool]
-    isHypothetical: IsHypothetical[bool]
+    isExperimental: Optional[IsExperimental[bool]] = None
     hasSynthesis: Optional[HasSynthesis[Synthesis]] = None
     hasStability: Optional[HasStability[Stability]] = None
     hasHeatCapacity: Optional[HasHeatCapacity[HeatCapacity]] = None
