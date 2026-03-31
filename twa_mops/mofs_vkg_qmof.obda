@@ -1,0 +1,82 @@
+[PrefixDeclaration]
+ontomofs_vkg:       https://www.theworldavatar.com/kg/ontomofs_vkg/
+rdf:                http://www.w3.org/1999/02/22-rdf-syntax-ns#
+owl:                http://www.w3.org/2002/07/owl#
+xsd:                http://www.w3.org/2001/XMLSchema#
+
+[MappingDeclaration] @collection [[
+mappingId       Provenance_qmof
+target      ontomofs_vkg:provenance_{mofid} a ontomofs_vkg:Provenance;
+                    ontomofs_vkg:hasReferenceDOI "{info_doi}"^^xsd:string.
+source      SELECT "info.mofid.mofid" as mofid, "info.doi" as info_doi
+            FROM "qmof"
+
+mappingId       Topology_qmof
+target      ontomofs_vkg:Topology_{mofid} a ontomofs_vkg:Topology;
+                    ontomofs_vkg:hasRCSRSym "{info_mofid_topology}"^^xsd:string.
+source      SELECT "info.mofid.mofid" as mofid, "info.mofid.topology" as info_mofid_topology
+            FROM "qmof"
+
+mappingId       PoreDiameter_qmof
+target      ontomofs_vkg:PoreDiameter_{mofid} a ontomofs_vkg:PoreDiameter;
+                    ontomofs_vkg:hasPLD "{info_pld}"^^xsd:float;
+                    ontomofs_vkg:hasLCD "{info_lcd}"^^xsd:float.
+source      SELECT "info.mofid.mofid" as mofid, "info.pld" as info_pld, "info.lcd" as info_lcd
+            FROM "qmof"
+
+mappingId       CrystalStructure_qmof
+target      ontomofs_vkg:CrystalStructure_{mofid} a ontomofs_vkg:CrystalStructure;
+                    ontomofs_vkg:hasSpaceGroupNumber "{info_symmetry_spacegroup_number}"^^xsd:integer;
+                    ontomofs_vkg:hasSymmetryPointGroup "{info_symmetry_pointgroup}"^^xsd:string;
+                    ontomofs_vkg:hasDensity "{info_density}"^^xsd:float;
+                    ontomofs_vkg:hasUnitCellVolume "{info_volume}"^^xsd:float.
+source      SELECT "info.mofid.mofid" as mofid, 
+                   "info.symmetry.spacegroup_number" as info_symmetry_spacegroup_number, 
+                   "info.symmetry.pointgroup" as info_symmetry_pointgroup,
+                   "info.density" as info_density, 
+                   "info.volume" as info_volume
+            FROM "qmof"
+
+mappingId       Identifiers_qmof
+target      ontomofs_vkg:Identifiers_{mofid} a ontomofs_vkg:Identifier;
+                    ontomofs_vkg:hasmofid_v1 "{mofid}"^^xsd:string;
+                    ontomofs_vkg:hascsd_refcode "{name}"^^xsd:string;
+                    ontomofs_vkg:hasdb_id "{qmof_id}"^^xsd:string.
+source      SELECT "info.mofid.mofid" as mofid,"name","qmof_id"
+            FROM "qmof"
+
+mappingId       ChemicalIdentity_qmof
+target      ontomofs_vkg:ChemicalIdentity_{mofid} a ontomofs_vkg:ChemicalIdentity;
+                    ontomofs_vkg:hasUnitCellFormula "{info_formula}"^^xsd:string;
+                    ontomofs_vkg:hasEmpiricalFormula "{info_formula_reduced}"^^xsd:string.
+source      SELECT "info.mofid.mofid" as mofid, "info.formula" as info_formula, "info.formula_reduced" as info_formula_reduced
+            FROM "qmof"
+
+mappingId       ElectronicStructure_qmof
+target      ontomofs_vkg:ElectronicStructure_{mofid} a ontomofs_vkg:ElectronicStructure;
+                     ontomofs_vkg:hasTotalEnergy "{outputs_pbe_energy_total}"^^xsd:float;
+                     ontomofs_vkg:hasBandGap "{outputs_pbe_bandgap}"^^xsd:float.
+            SELECT "info.mofid.mofid" as mofid, 
+                   "outputs.pbe.bandgap" as outputs_pbe_bandgap, 
+                   "outputs.pbe.energy_total" as outputs_pbe_energy_total
+
+mappingId       MetalOrganicFramework_qmof
+target      ontomofs_vkg:mof_{mofid} a ontomofs_vkg:MetalOrganicFramework;
+                    ontomofs_vkg:hasIdentifiers ontomofs_vkg:Identifiers_{mofid};
+                    ontomofs_vkg:hasNodeSmile "{info_mofid_smiles_nodes}"^^xsd:string;
+                    ontomofs_vkg:hasLinkerSmile "{info_mofid_smiles_linkers}"^^xsd:string;
+                    ontomofs_vkg:hasTopology ontomofs_vkg:Topology_{mofid};
+                    ontomofs_vkg:hasSourcedb "QMOF_2025"^^xsd:string;
+                    ontomofs_vkg:hasProvenance ontomofs_vkg:provenance_{mofid};
+                    ontomofs_vkg:hasPoreDiameter ontomofs_vkg:PoreDiameter_{mofid};
+                    ontomofs_vkg:isExperimental "{info_synthesized}"^^xsd:boolean;
+                    ontomofs_vkg:hasChemicalIdentity ontomofs_vkg:ChemicalIdentity_{mofid};
+                    ontomofs_vkg:hasElectronicStructure ontomofs_vkg:ElectronicStructure_{mofid}
+                    ontomofs_vkg:hasCrystalStructure ontomofs_vkg:CrystalStructure_{mofid}.
+source      SELECT "info.mofid.mofid" as mofid, 
+                   "info.mofid.smiles_nodes" as info_mofid_smiles_nodes, 
+                   "info.mofid.smiles_linkers" as info_mofid_smiles_linkers, 
+                   "info.synthesized" as info_synthesized
+            FROM "qmof"
+
+]]
