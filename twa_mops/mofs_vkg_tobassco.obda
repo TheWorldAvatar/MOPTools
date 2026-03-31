@@ -1,0 +1,206 @@
+[PrefixDeclaration]
+ontomofs_vkg:       https://www.theworldavatar.com/kg/ontomofs_vkg/
+rdf:                http://www.w3.org/1999/02/22-rdf-syntax-ns#
+owl:                http://www.w3.org/2002/07/owl#
+xsd:                http://www.w3.org/2001/XMLSchema#
+
+[MappingDeclaration] @collection [[
+mappingId       Provenance_tobassco
+target      ontomofs_vkg:provenance_{mofid} a ontomofs_vkg:Provenance;
+                    ontomofs_vkg:hasReferenceDOI "https://doi.org/10.1038/s41586-019-1798-7"^^xsd:string ; 
+                    ontomofs_vkg:hasYearPublished "2019"^^xsd:string.
+source      SELECT mofid
+            FROM "tobassco"
+
+mappingId       Topology_tobassco
+target      ontomofs_vkg:Topology_{mofid} a ontomofs_vkg:Topology;
+                    ontomofs_vkg:hasRCSRSym "{topology}"^^xsd:string;
+source      SELECT mofid, "topology"
+            FROM "tobassco"
+
+mappingId       PoreDiameter_tobassco
+target      ontomofs_vkg:PoreDiameter_{mofid} a ontomofs_vkg:PoreDiameter;
+                    ontomofs_vkg:hasPLD "{largest_included_sphere_along_free_sphere_path_diameter [A]}"^^xsd:float;
+                    ontomofs_vkg:hasLCD "{largest_included_sphere_diameter [A]}"^^xsd:float;
+                    ontomofs_vkg:hasLFPD "{largest_free_sphere_diameter [A]}"^^xsd:float.
+source      SELECT mofid, "largest_free_sphere_diameter [A]", "largest_included_sphere_along_free_sphere_path_diameter [A]", "largest_included_sphere_diameter [A]"
+            FROM "tobassco"
+
+mappingId       SurfaceArea_tobassco
+target      ontomofs_vkg:SurfaceArea_{mofid} a ontomofs_vkg:SurfaceArea;
+                    ontomofs_vkg:hasGSA "{surface_area [m^2/g]}"^^xsd:float;
+source      SELECT mofid, "surface_area [m^2/g]"
+            FROM "tobassco"
+
+mappingId       PoreVolume_tobassco
+target      ontomofs_vkg:PoreVolume_{mofid} a ontomofs_vkg:PoreVolume;
+                    ontomofs_vkg:hasGPV "{void_volume [cm^3/g]}"^^xsd:float;
+                    ontomofs_vkg:hasVF "{void_fraction}"^^xsd:float;
+source      SELECT mofid, "void_fraction", "void_volume [cm^3/g]"
+            FROM "tobassco"
+
+mappingId       CrystalStructure_tobassco
+target      ontomofs_vkg:CrystalStructure_{mofid} a ontomofs_vkg:CrystalStructure;
+                    ontomofs_vkg:hasUnitCellVolume "{volume [A^3]}"
+source      SELECT mofid, "volume [A^3]"
+            FROM "tobassco"
+
+mappingId       ChemicalIdentity_tobassco
+target      ontomofs_vkg:ChemicalIdentity_{mofid} a ontomofs_vkg:ChemicalIdentity;
+                    ontomofs_vkg:hasFunctionalGroup "{functional_groups}"^^xsd:string;
+source      SELECT mofid, "functional_groups"
+            FROM "all_MOFs_screening_data"
+
+mappingId       Property_tobassco
+target      ontomofs_vkg:Property_{mofid}_CO2_uptake_P15_T298 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{excess_CO2_uptake_P0.15bar_T298K [mmol/g]}"^^xsd:float ; 
+                    ontomofs_vkg:hasUnits "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "298"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.15"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_heat_ad_P15_T298 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{heat_adsorption_CO2_P0.15bar_T298K [kcal/mol]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "kcal/mol"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "298"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.15"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_uptake_P10_T363 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{excess_CO2_uptake_P0.10bar_T363K [mmol/g]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "363"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.10"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_heat_ad_P10_T363 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{heat_adsorption_CO2_P0.10bar_T363K [kcal/mol]}"^^xsd:float ; 
+                    ontomofs_vkg:hasUnits "kcal/mol"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "363"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.10"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_uptake_P70_T413 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{excess_CO2_uptake_P0.70bar_T413K [mmol/g]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "413"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.70"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_heat_ad_P70_T413 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{heat_adsorption_CO2_P0.70bar_T413K [kcal/mol]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "kcal/mol"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "413"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.70"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_wc_vacuum_swing a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{working_capacity_vacuum_swing [mmol/g]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "363"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.10"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_wc_temp_swing a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{working_capacity_temperature_swing [mmol/g]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "413"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.70"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_binary_uptake_P15_T298 a ontomofs_vkg:Property; 
+                    ontomofs_vkg:hasNumericalValue "{excess_CO2_binary_uptake_P0.15bar_T298K [mmol/g]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "298"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.15"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_binary_heat_ad_P15_T298 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{heat_adsorption_CO2_binary_P0.15bar_T298K [kcal/mol]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "kcal/mol"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "298"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.15"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_N2_binary_uptake_P85_T298 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{excess_N2_binary_uptake_P0.85bar_T298K [mmol/g]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "mmol/g"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "298"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.85"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_N2_binary_heat_ad_P85_T298 a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{heat_adsorption_N2_binary_P0.85bar_T298K [kcal/mol]}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "kcal/mol"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+                    ontomofs_vkg:hasTemperature "298"^^xsd:float;
+                    ontomofs_vkg:hasPressure "0.85"^^xsd:float.
+            ontomofs_vkg:Property_{mofid}_CO2_N2_selectivity a ontomofs_vkg:Property;
+                    ontomofs_vkg:hasNumericalValue "{CO2/N2_selectivity}"^^xsd:float ;
+                    ontomofs_vkg:hasUnits "N/A"^^xsd:string;
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isSimulated "true"^^xsd:boolean;
+                    ontomofs_vkg:hasMethod "GCMC"^^xsd:string;
+source      SELECT mofid, 
+                   "heat_adsorption_CO2_P0.15bar_T298K [kcal/mol]"	
+                   "excess_CO2_uptake_P0.15bar_T298K [mmol/g]"	
+                   "heat_adsorption_CO2_P0.10bar_T363K [kcal/mol]"	
+                   "excess_CO2_uptake_P0.10bar_T363K [mmol/g]"	
+                   "heat_adsorption_CO2_P0.70bar_T413K [kcal/mol]"	
+                   "excess_CO2_uptake_P0.70bar_T413K [mmol/g]"	
+                   "working_capacity_vacuum_swing [mmol/g]"	
+                   "working_capacity_temperature_swing [mmol/g]"	
+                   "heat_adsorption_CO2_binary_P0.15bar_T298K [kcal/mol]"	
+                   "excess_CO2_binary_uptake_P0.15bar_T298K [mmol/g]"	
+                   "heat_adsorption_N2_binary_P0.85bar_T298K [kcal/mol]"		
+                   "excess_N2_binary_uptake_P0.85bar_T298K [mmol/g]"	
+                   "CO2/N2_selectivity"
+            FROM "tobassco"
+
+mappingId       Identifier_tobassco
+target      ontomofs_vkg:Identifiers_{mofid} a ontomofs_vkg:Identifier;
+                    ontomofs_vkg:hasdb_id "{MOFName}"^^xsd:string;
+source      SELECT mofid, "MOFName"
+            FROM "tobassco"
+
+mappingId       MetalOrganicFramework_tobassco
+target      ontomofs_vkg:mof_{mofid} a ontomofs_vkg:MetalOrganicFramework;
+                    ontomofs_vkg:hasIdentifiers ontomofs_vkg:Identifiers_{mofid};
+                    ontomofs_vkg:hasTopology ontomofs_vkg:Topology_{mofid};
+                    ontomofs_vkg:hasSourcedb "Tobassco"^^xsd:string;
+                    ontomofs_vkg:hasProvenance ontomofs_vkg:provenance_{mofid};
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_uptake_P15_T298;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_heat_ad_P15_T298;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_uptake_P10_T363;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_heat_ad_P10_T363;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_uptake_P70_T413;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_heat_ad_P70_T413;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_wc_vacuum_swing;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_wc_temp_swing;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_binary_uptake_P15_T298;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_binary_heat_ad_P15_T298;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_N2_binary_uptake_P85_T298;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_N2_binary_heat_ad_P85_T298;
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{mofid}_CO2_N2_selectivity;
+                    ontomofs_vkg:hasPoreDiameter ontomofs_vkg:PoreDiameter_{mofid};
+                    ontomofs_vkg:hasSurfaceArea ontomofs_vkg:SurfaceArea_{mofid};
+                    ontomofs_vkg:hasPoreVolume ontomofs_vkg:PoreVolume_{mofid};
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:hasCrystalStructure ontomofs_vkg:CrystalStructure_{mofid}.
+source      SELECT mofid
+            FROM "tobassco"
+
+]]
