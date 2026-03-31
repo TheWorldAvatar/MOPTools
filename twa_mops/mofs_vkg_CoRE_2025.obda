@@ -1,0 +1,122 @@
+[PrefixDeclaration]
+ontomofs_vkg:       https://www.theworldavatar.com/kg/ontomofs_vkg/
+rdf:                http://www.w3.org/1999/02/22-rdf-syntax-ns#
+owl:                http://www.w3.org/2002/07/owl#
+xsd:                http://www.w3.org/2001/XMLSchema#
+
+[MappingDeclaration] @collection [[
+mappingId       Provenance_core_2025
+target      ontomofs_vkg:provenance_{mofid} a ontomofs_vkg:Provenance;
+                    ontomofs_vkg:hasReferenceDOI "{DOI}"^^xsd:string ; 
+                    ontomofs_vkg:hasYearPublished "{Year}"^^xsd:string.
+source      SELECT mofid, "DOI", "Year"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       Topology_core_2025
+target      ontomofs_vkg:Topology_{mofid} a ontomofs_vkg:Topology;
+                    ontomofs_vkg:hasRCSRSym "{topology(AllNodes)}"^^xsd:string;
+                    ontomofs_vkg:hasCatenation "{catenation}"^^xsd:integer ;
+                    ontomofs_vkg:hasDimension "{dimension_by_topo}"^^xsd:integer.
+source      SELECT mofid, "topology(AllNodes)", "catenation", "dimension_by_topo"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       PoreDiameter_core_2025
+target      ontomofs_vkg:PoreDiameter_{mofid} a ontomofs_vkg:PoreDiameter;
+                    ontomofs_vkg:hasPLD "{PLD (Å)}"^^xsd:float;
+                    ontomofs_vkg:hasLCD "{LCD (Å)}"^^xsd:float;
+                    ontomofs_vkg:hasLFPD "{LFPD (Å)}"^^xsd:float.
+source      SELECT mofid, "PLD (Å)", "LCD (Å)", "LFPD (Å)"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       SurfaceArea_core_2025
+target      ontomofs_vkg:SurfaceArea_{mofid} a ontomofs_vkg:SurfaceArea;
+                    ontomofs_vkg:hasASA "{ASA (A2)}"^^xsd:float;
+                    ontomofs_vkg:hasNASA "{NASA (A2)}"^^xsd:float ;
+                    ontomofs_vkg:hasGSA "{ASA (m2/g)}"^^xsd:float;
+                    ontomofs_vkg:hasNGSA "{NASA (m2/g)}"^^xsd:float;
+                    ontomofs_vkg:hasVSA "{ASA (m2/cm3)}"^^xsd:float;
+                    ontomofs_vkg:hasNVSA "{NASA (m2/cm3)}"^^xsd:float.
+source      SELECT mofid, "ASA (A2)", "ASA (m2/cm3)", "ASA (m2/g)" , "NASA (A2)" , "NASA (m2/cm3)", "NASA (m2/g)"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       PoreVolume_core_2025
+target      ontomofs_vkg:PoreVolume_{mofid} a ontomofs_vkg:PoreVolume;
+                    ontomofs_vkg:hasPV "{PV (A3)}"^^xsd:float;
+                    ontomofs_vkg:hasNPV "{NAV (A3)}"^^xsd:float;
+                    ontomofs_vkg:hasGPV "{PV (cm3/g)}"^^xsd:float;
+                    ontomofs_vkg:hasNGPV "{NPV (cm3/g)}"^^xsd:float;
+                    ontomofs_vkg:hasVF "{VF}"^^xsd:float;
+                    ontomofs_vkg:hasNVF "{NAV_VF}"^^xsd:float.
+source      SELECT mofid, "PV (A3)","VF","PV (cm3/g)","NAV (A3)","NAV_VF","NPV (cm3/g)"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       CrystalStructure_core_2025
+target      ontomofs_vkg:CrystalStructure_{mofid} a ontomofs_vkg:CrystalStructure;
+                    ontomofs_vkg:hasSpaceGroupNumber "{number_spacegroup}"^^xsd:integer;
+                    ontomofs_vkg:hasDensity "{Density (g/cm3)}"^^xsd:float.
+source      SELECT mofid, "number_spacegroup", "Density (g/cm3)"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       Stability_core_2025
+target      ontomofs_vkg:Stability_{mofid} a ontomofs_vkg:Stability;
+                    ontomofs_vkg:hasThermalStability "{Thermal_stability (℃)}"^^xsd:float;
+                    ontomofs_vkg:hasSolventStability "{Solvent_stability}"^^xsd:float;
+                    ontomofs_vkg:hasWaterStability "{Water_stability}"^^xsd:float;
+                    ontomofs_vkg:hasKHwater "{KH_Classes}"^^xsd:string.
+source      SELECT mofid, "Thermal_stability (℃)", "Solvent_stability", "Water_stability", "KH_Classes"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       HeatCapacity_core_2025
+target      ontomofs_vkg:HeatCapacity_{mofid}_300 a ontomofs_vkg:HeatCapacity;
+                    ontomofs_vkg:hasNumericalValue "{Heat_capacity@300K (J/g/K)}"^^xsd:float ;
+                    ontomofs_vkg:hasTemperature "300"^^xsd:float ;
+                    ontomofs_vkg:hasUncertainty "{std @ 300 K (J/g/K)}"^^xsd:float.
+            ontomofs_vkg:HeatCapacity_{mofid}_350 a ontomofs_vkg:HeatCapacity;
+                    ontomofs_vkg:hasNumericalValue "{Heat_capacity@350K (J/g/K)}"^^xsd:float ;
+                    ontomofs_vkg:hasTemperature "350"^^xsd:float ;
+                    ontomofs_vkg:hasUncertainty "{std @ 350 K (J/g/K)}"^^xsd:float.
+            ontomofs_vkg:HeatCapacity_{mofid}_400 a ontomofs_vkg:HeatCapacity;
+                    ontomofs_vkg:hasNumericalValue "{Heat_capacity@400K (J/g/K)}"^^xsd:float ;
+                    ontomofs_vkg:hasTemperature "400"^^xsd:float ;
+                    ontomofs_vkg:hasUncertainty "{std @ 400 K (J/g/K)}"^^xsd:float.
+source      SELECT mofid, "Heat_capacity@300K (J/g/K)", "std @ 300 K (J/g/K)", "Heat_capacity@350K (J/g/K)", "std @ 350 K (J/g/K)", "Heat_capacity@400K (J/g/K)", "std @ 400 K (J/g/K)"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       Identifiers_core_2025
+target      ontomofs_vkg:Identifiers_{mofid} a ontomofs_vkg:Identifier;
+                    ontomofs_vkg:hasmofid_v1 "{mofid-v1}"^^xsd:string;
+                    ontomofs_vkg:hasmofid_v2 "{mofid-v2}"^^xsd:string;
+                    ontomofs_vkg:hascsd_refcode "{refcode}"^^xsd:string;
+                    ontomofs_vkg:hasdb_id "{coreid}"^^xsd:string;
+                    ontomofs_vkg:hasNames "{name}"^^xsd:string.
+source      SELECT mofid, "coreid",	"refcode",	"name", "mofid-v1", "mofid-v2"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       ChemicalIdentity_core_2025
+target      ontomofs_vkg:ChemicalIdentity_{mofid} a ontomofs_vkg:ChemicalIdentity;
+                    ontomofs_vkg:hasMetal "{metal}"^^xsd:string;
+                    ontomofs_vkg:hasOpenMetalSite "{Has OMS}"^^xsd:string;
+                    ontomofs_vkg:hasMass "{average_atomic_mass}"^^xsd:float.
+source      SELECT mofid, "Metal Types" as metal,"Has OMS", "average_atomic_mass"
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+mappingId       MetalOrganicFramework_core_2025
+target      ontomofs_vkg:mof_{mofid} a ontomofs_vkg:MetalOrganicFramework;
+                    ontomofs_vkg:hasIdentifiers ontomofs_vkg:Identifiers_{mofid};
+                    ontomofs_vkg:hasTopology ontomofs_vkg:Topology_{mofid};
+                    ontomofs_vkg:hasSourcedb "CoRE MOF 2025"^^xsd:string;
+                    ontomofs_vkg:hasProvenance ontomofs_vkg:provenance_{mofid};
+                    ontomofs_vkg:hasPoreDiameter ontomofs_vkg:PoreDiameter_{mofid};
+                    ontomofs_vkg:hasSurfaceArea ontomofs_vkg:SurfaceArea_{mofid};
+                    ontomofs_vkg:hasPoreVolume ontomofs_vkg:PoreVolume_{mofid};
+                    ontomofs_vkg:isExperimental "true"^^xsd:boolean;
+                    ontomofs_vkg:hasStability ontomofs_vkg:Stability_{mofid};
+                    ontomofs_vkg:hasHeatCapacity ontomofs_vkg:HeatCapacity_{mofid}_300;
+                    ontomofs_vkg:hasHeatCapacity ontomofs_vkg:HeatCapacity_{mofid}_350;
+                    ontomofs_vkg:hasHeatCapacity ontomofs_vkg:HeatCapacity_{mofid}_400;
+                    ontomofs_vkg:hasChemicalIdentity ontomofs_vkg:ChemicalIdentity_{mofid};
+                    ontomofs_vkg:hasCrystalStructure ontomofs_vkg:CrystalStructure_{mofid}.
+source      SELECT mofid
+            FROM "CR_data_CSD_modified_20250227_edited"
+
+]]
