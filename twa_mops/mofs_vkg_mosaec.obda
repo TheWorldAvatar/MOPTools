@@ -1,0 +1,84 @@
+[PrefixDeclaration]
+ontomofs_vkg:       https://www.theworldavatar.com/kg/ontomofs_vkg/
+rdf:                http://www.w3.org/1999/02/22-rdf-syntax-ns#
+owl:                http://www.w3.org/2002/07/owl#
+xsd:                http://www.w3.org/2001/XMLSchema#
+
+[MappingDeclaration] @collection [[
+mappingId       Provenance
+target      ontomofs_vkg:Provenance_{refcode} a ontomofs_vkg:Provenance;
+                    ontomofs_vkg:hasReferenceDOI "doi.org/10.1039/D4SC07438F";
+                    ontomofs_vkg:hasYearPublished "{framework_dimensionality}"^^xsd:string.
+source      SELECT refcode, "topology_stndard", "framework_dimensionality"
+            FROM "mosaec-db"
+
+mappingId       Topology
+target      ontomofs_vkg:Topology_{refcode} a ontomofs_vkg:Topology;
+                    ontomofs_vkg:hasRCSRSym "{topology_stndard}"^^xsd:string;
+                    ontomofs_vkg:hasDimension "{framework_dimensionality}"^^xsd:string.
+source      SELECT refcode, "topology_stndard", "framework_dimensionality"
+            FROM "mosaec-db"
+
+mappingId       PoreDiameter
+target      ontomofs_vkg:PoreDiameter_{refcode} a ontomofs_vkg:PoreDiameter;
+                    ontomofs_vkg:hasPLD "{pld_ang_H2}"^^xsd:float;
+                    ontomofs_vkg:hasLCD "{lcd_ang_H2}"^^xsd:float;
+source      SELECT refcode, pld_ang_H2, lcd_ang_H2
+            FROM "mosaec-db"
+
+mappingId       SurfaceArea
+target      ontomofs_vkg:SurfaceArea_{refcode} a ontomofs_vkg:SurfaceArea;
+                    ontomofs_vkg:hasGSA "{asa_m2/g_H2}"^^xsd:float;
+                    ontomofs_vkg:hasVSA "{asa_m2/cm3_H2}"^^xsd:float;
+source      SELECT refcode, "asa_m2/g_H2","asa_m2/cm3_H2"
+            FROM "mosaec-db"
+
+mappingId       PoreVolume
+target      ontomofs_vkg:PoreVolume_{refcode} a ontomofs_vkg:PoreVolume;
+                    ontomofs_vkg:hasPV "{av_probe-occupiable_ang3_H2}"^^xsd:float;
+                    ontomofs_vkg:hasNPV "{av_ang3_H2}"^^xsd:float;
+                    ontomofs_vkg:hasGPV "{av_probe-occupiable_cm3/g_H2}"^^xsd:float;
+                    ontomofs_vkg:hasNGPV "{av_cm3/g_H2}"^^xsd:float;
+                    ontomofs_vkg:hasVF "{void_fraction_probe-occupiable_H2}"^^xsd:float;
+                    ontomofs_vkg:hasNVF "{void_fraction_H2}"^^xsd:float.
+source      SELECT refcode, "void_fraction_H2", "av_ang3_H2", "av_cm3/g_H2", "void_fraction_probe-occupiable_H2", "av_probe-occupiable_ang3_H2", "av_probe-occupiable_cm3/g_H2"
+            FROM "mosaec-db"
+
+mappingId       CrystalStructure
+target      ontomofs_vkg:CrystalStructure_{refcode} a ontomofs_vkg:CrystalStructure;
+                    ontomofs_vkg:hasDensity "{density_g/cm3}"^^xsd:float;
+source      SELECT refcode, density_g/cm3
+            FROM "mosaec-db"
+
+mappingId       Identifier
+target      ontomofs_vkg:Identifiers_{refcode} a ontomofs_vkg:Identifier;
+                    ontomofs_vkg:hasdb_id "{refcode}"^^xsd:string;
+source      SELECT refcode
+            FROM "mosaec-db"
+
+mappingId       ChemicalIdentity
+target      ontomofs_vkg:ChemicalIdentity_{refcode} a ontomofs_vkg:ChemicalIdentity;
+                    ontomofs_vkg:hasUnitCellFormula "{composition}"^^xsd:string;
+                    ontomofs_vkg:hasMetal "{metal_id}"^^xsd:string;
+                    ontomofs_vkg;hasOpenMetalSite "{open_metal_site}"^^xsd:string;
+source      SELECT refcode, "composition", "metal_id", "open_metal_site"
+            FROM refcode
+
+mappingId       MetalOrganicFramework
+target      ontomofs_vkg:mof_{refcode} a ontomofs_vkg:MetalOrganicFramework;
+                    ontomofs_vkg:hasIdentifiers ontomofs_vkg:Identifiers_{refcode};
+                    ontomofs_vkg:hasTopology ontomofs_vkg:Topology_{refcode};
+                    ontomofs_vkg:hasSourcedb "MOSAEC"^^xsd:string;
+                    ontomofs_vkg:hasPoreDiameter ontomofs_vkg:PoreDiameter_{refcode};
+                    ontomofs_vkg:hasSurfaceArea ontomofs_vkg:SurfaceArea_{refcode};
+                    ontomofs_vkg:hasPoreVolume ontomofs_vkg:PoreVolume_{refcode};
+                    ontomofs_vkg:isExperimental "false"^^xsd:boolean;
+                    ontomofs_vkg:isHypothetical "true"^^xsd:boolean;
+                    ontomofs_vkg:hasStability ontomofs_vkg:Stability_{refcode};
+                    ontomofs_vkg:hasProperty ontomofs_vkg:Property_{refcode};
+                    ontomofs_vkg:hasChemicalIdentity ontomofs_vkg:ChemicalIdentity_{refcode};
+                    ontomofs_vkg:hasCrystalStructure ontomofs_vkg:CrystalStructure_{refcode}.
+source      SELECT refcode
+            FROM "mosaec-db"
+
+]]
