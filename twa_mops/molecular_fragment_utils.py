@@ -152,6 +152,44 @@ def load_molecular_fragment_from_mol_file( #TODO change to mol file content/str 
         'smiles': smiles,
     }
 
+def _label_local_frame_atoms(mol):
+    """
+    Label the two atoms that define the local reference frame
+    for each dummy atom by setting their isotope to 99.
+
+    Params:
+        mol : rdkit.Chem.Mol
+            RDKit molecule object containing one or more dummy atoms (atomic
+            number 0), each bonded to the fragment whose local frame is to
+            be labelled.
+
+    Returns:
+        mol : rdkit.Chem.Mol
+            The same molecule with isotope labels (99) set on the two frame-
+            defining neighbours of each dummy atom.
+    """
+
+    ranks = Chem.CanonicalRankAtoms(mol)
+    dummy_atoms = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() == 0]
+   
+    for d_idx in dummy_atoms:
+        bond = mol.GetAtomWithIdx(d_idx).GetBonds()[0]
+        nbr1 = bond.GetBeginAtom() if bond.GetBeginAtom().GetIdx() != d_idx else bond.GetEndAtom()
+        nbr1_idx = nbr1.GetIdx()
+
+        nbr2_idx = min(
+            (b.GetOtherAtomIdx(nbr1_idx)
+            for b in nbr1.GetBonds()
+            if b.GetOtherAtomIdx(nbr1_idx) != d_idx),
+            key=lambda i: ranks[i]
+        )
+        nbr2 = mol.GetAtomWithIdx(nbr2_idx)
+
+        nbr1.SetIsotope(99)
+        nbr2.SetIsotope(99)
+    
+    return mol
+
 
 def _get_local_frame(conf, mol: Chem.Mol, dummy_idx: int, nbr_idx: int):
     """
@@ -173,14 +211,23 @@ def _get_local_frame(conf, mol: Chem.Mol, dummy_idx: int, nbr_idx: int):
     e1 = v1 / np.linalg.norm(v1)
     
     # find a second neighbour of nbr_idx
+    nbr1 = mol.GetAtomWithIdx(nbr_idx)
     nbr2_idx = None
-    for b in mol.GetAtomWithIdx(nbr_idx).GetBonds(): # TODO check canonical ranking of neighbours
-        idx = b.GetOtherAtomIdx(nbr_idx)
-        if idx != dummy_idx:
+
+    for nbr in nbr1.GetNeighbors():
+        idx = nbr.GetIdx()
+        if idx != dummy_idx and nbr.GetIsotope() == 99:
             nbr2_idx = idx
             break
+
     if nbr2_idx is None:
-        raise ValueError(f"No second neighbour found for atom {nbr_idx}")
+        for b in nbr1.GetBonds(): # TODO check canonical ranking of neighbours
+            idx = b.GetOtherAtomIdx(nbr_idx)
+            if idx != dummy_idx:
+                nbr2_idx = idx
+                break
+        if nbr2_idx is None:
+            raise ValueError(f"No second neighbour found for atom {nbr_idx}")
     
     # second axis: project out component along e1
     v_temp = pos(nbr2_idx) - o
@@ -937,6 +984,7 @@ def assemble_fragments_to_cbu(
         )
         for mol_file in linker_mol_files
     ]
+    linker_mols = [ _label_local_frame_atoms(m) for m in linker_mols]
 
     # load binding group molecule
     binding_group_mol = _load_fragment_molecule_from_mol_file(
