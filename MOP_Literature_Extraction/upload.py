@@ -1132,7 +1132,7 @@ def link_cbu(input_path, output_path):
         cbu1                                                        = instantiate_cbu(product["cbuFormula1"], syn_client, sparql_client_mop, species1)
         cbu2                                                        = instantiate_cbu(product["cbuFormula2"], syn_client, sparql_client_mop, species2)
         # Query the KG for an existing MOP instance using the CCDC number
-        mop_iri                                                     = kgq.mop_querying(syn_client, CCDC_num, "", "")
+        mop_iri                                                     = kgq.mop_querying(syn_client, CCDC_num, "", [""]) #should this not also search for the formula in case there isn't a ccdc number?
         # Retrieve the corresponding MOP instance from the KG
         mop_instance                                                = MetalOrganicPolyhedron.pull_from_kg(mop_iri[0]["MOPIRI"] ,syn_client,1)[0]
         print("mop instance:", mop_instance)
@@ -1271,7 +1271,7 @@ def upload_steps(input_path, output_path):
         print("transformation iri: ", transformation_iri)
         if transformation_iri == []:
             # If no transformation is found, create a new one
-            print(f"generating new Transformation! MOP values: CCDC={entry["productCCDCNumber"]} and productName= {entry["productNames"]}. ")
+            print(f"generating new Transformation! MOP values: CCDC={entry['productCCDCNumber']} and productName= {entry['productNames']}. ")
             # Instantiate a new chemical output with an unknown yield
             chemical_output, yield_instance                     = instantiate_output(entry["productCCDCNumber"], "N/A", entry["productNames"], "-1", sparql_client_mop, sparql_client_synthesis)
             # Create a new chemical transformation instance
