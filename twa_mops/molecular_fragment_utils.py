@@ -153,12 +153,26 @@ def load_molecular_fragment_from_mol_file( #TODO change to mol file content/str 
     }
 
 def _label_local_frame_atoms(mol):
+    """
+    Label the two atoms that define the local reference frame
+    for each dummy atom by setting their isotope to 99.
+
+    Params:
+        mol : rdkit.Chem.Mol
+            RDKit molecule object containing one or more dummy atoms (atomic
+            number 0), each bonded to the fragment whose local frame is to
+            be labelled.
+
+    Returns:
+        mol : rdkit.Chem.Mol
+            The same molecule with isotope labels (99) set on the two frame-
+            defining neighbours of each dummy atom.
+    """
 
     ranks = Chem.CanonicalRankAtoms(mol)
     dummy_atoms = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() == 0]
    
     for d_idx in dummy_atoms:
-        # d_idx = dummy_atoms[dummy_idx]
         bond = mol.GetAtomWithIdx(d_idx).GetBonds()[0]
         nbr1 = bond.GetBeginAtom() if bond.GetBeginAtom().GetIdx() != d_idx else bond.GetEndAtom()
         nbr1_idx = nbr1.GetIdx()
