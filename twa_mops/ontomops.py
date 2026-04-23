@@ -1885,3 +1885,70 @@ class MetalOrganicPolyhedron(CoordinationCage):
         fig.update_layout(autosize=False, width=1200, height=400)
         fig.show()
         return fig
+
+
+    def has_cbu_overlaps(self, threshold_factor: float = 1.2) -> bool:
+        """
+        Check for any atom–atom overlaps between distinct organic CBUs.
+
+        An overlap is flagged if any inter-CBU distance <
+        threshold_factor * (r_cov_i + r_cov_j),
+        where r_cov is the covalent radius from cap.PERIODIC_TABLE.
+
+        Returns
+        -------
+        overlap_detected : bool
+        """
+        from scipy.spatial import distance_matrix
+        import itertools
+
+        cbu_coords = []
+        cbu_radii  = []
+
+        for t in self.hasCBUAssemblyTransformation:
+            cbu_iri = next(iter(t.transforms))
+            cbu = KnowledgeGraph.get_object_from_lookup(cbu_iri)
+            if cbu.is_metal_cbu:
+                continue
+
+            geo = next(iter(cbu.hasGeometry))
+            if geo.hasPoints is None:
+                raise ValueError(f"Geometry for CBU {cbu_iri} not loaded.")
+            binding_atoms = [
+                atom for atom in geo.hasPoints
+                if atom.label.lower() not in ('x', 'center')
+            ]
+
+            pts = np.array([atom.as_array for atom in binding_atoms])
+            radii = np.array([
+                cap.PERIODIC_TABLE.GetRcovalent(atom.label)
+                for atom in binding_atoms
+            ])
+
+            quat = next(iter(t.quaternionToRotate))
+            R = Quaternion.from_string(quat).as_rotation_matrix()
+            pts = np.array([R.apply(p) for p in pts])
+
+            s = next(iter(t.scaleFactorToAlignCoordinateCenter))
+            cbu_ctr = next(iter(cbu.hasCBUAssemblyCenter)).coordinates.as_array
+            gcc_iri = next(iter(t.alignsTo))
+            gcc = KnowledgeGraph.get_object_from_lookup(gcc_iri)
+            gcc_pts = gcc.coordinates.as_array * s
+            pts += (gcc_pts - R.apply(cbu_ctr))
+            vec = Vector.from_string(
+                next(iter(t.translationVectorToAlignOrigin))
+            ).as_array
+            pts += vec
+
+            cbu_coords.append(pts)
+            cbu_radii.append(radii)
+
+        for i, j in itertools.combinations(range(len(cbu_coords)), 2):
+            A, B = cbu_coords[i], cbu_coords[j]
+            ra, rb = cbu_radii[i], cbu_radii[j]
+            D = distance_matrix(A, B)
+            T = threshold_factor * (ra[:, None] + rb[None, :])
+            if np.any(D < T):
+                return True
+
+        return False
