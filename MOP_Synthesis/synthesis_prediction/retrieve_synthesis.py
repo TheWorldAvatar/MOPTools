@@ -15,9 +15,13 @@ import twa
 ontosyn_client = twa.kg_operations.PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted')
 ontospecies_client = twa.kg_operations.PySparqlClient(credentials.ONTOSPECIES_ENDPOINT, 'restricted')
 
-synthesis_iris = ['https://www.theworldavatar.com/kg/OntoSyn/ChemicalSynthesis_96270260-1b57-43e5-80b1-a6b23bb6ceca']
+synthesis_iris = ['https://www.theworldavatar.com/kg/OntoSyn/ChemicalSynthesis_fcbefc2f-9b00-4362-98fa-08a65a294714']
 syns = ontosyn.ChemicalSynthesis.pull_from_kg(iris=synthesis_iris,sparql_client=ontosyn_client,recursive_depth=-1)
 
+def getHeatingConditions(synthesis):
+    for step in list(synthesis.hasSynthesisStep):
+        if step.__class__ == ontosyn.HeatChill:
+            print("yes")
 
 def getMaterial(material,name=''):
     thermoBehaviour=list(material.thermodynamicBehaviour)[0]
@@ -44,18 +48,20 @@ def getMaterial(material,name=''):
     return(matString)
 
 def getValue(meas,defaultString="unknown"):
-    val = list(meas.hasValue)[0]
-    numVal=list(val.hasNumericalValue)[0]
-    if val.__class__ == ontosyn.Measure:
-        unit=list(val.hasUnit)[0]
+    if len(meas.hasValue) == 1:
+        val = list(meas.hasValue)[0]
+        numVal=list(val.hasNumericalValue)[0]
+        if val.__class__ == ontosyn.ScalarValue or val.__class__ == ontosyn.om.Measure:
+            unit=list(val.hasUnit)[0]
+        else:
+            unit=list(val.hasUnitOfMeasure)[0]
+        unitLab=list(unit.rdfs_label)[0]
+        if numVal==0.0 and unitLab=="N/A":
+            amount = defaultString
+        else:
+            amount = str(numVal) + unitLab
     else:
-        unit=list(val.hasUnitOfMeasure)[0]
-    unitLab=list(unit.rdfs_label)[0]
-    if numVal==0.0 and unitLab=="N/A":
         amount = defaultString
-    else:
-        amount = str(numVal) + unitLab
-
     return amount
 
 def getStep(step):
@@ -167,12 +173,12 @@ def getStep(step):
     return instr
 
 
-def getSynthesis(synthesis):
+def printSynthesis(synthesis):
     MOP = "a"
     query = "SELECT ?chemOut WHERE { ?trans <" + ontosyn.IsDescribedBy.predicate_iri + "> <" + synthesis.instance_iri + "> ; <" + ontosyn.HasChemicalOutput.predicate_iri + "> ?chemOut . }"
     chemOutResp = ontosyn_client.perform_query(query)
     chemOut = chemOutResp[0]['chemOut']
-    chemOutKg=ontosyn.ChemicalOutput.pull_from_kg(chemOut,ontosyn_client,recursive_depth=-1)
+    chemOutKg=ontosyn.ChemicalOutput.pull_from_kg(chemOut,ontosyn_client,recursive_depth=2)
     chemicalOutput=list(chemOutKg)[0]
     MOP = list(chemicalOutput.isRepresentedBy)[0]
     MOPFormula = list(MOP.hasMOPFormula)[0]
@@ -204,4 +210,4 @@ def getSynthesis(synthesis):
 
 
 for syn in syns:
-    getSynthesis(syn)
+    printSynthesis(syn)

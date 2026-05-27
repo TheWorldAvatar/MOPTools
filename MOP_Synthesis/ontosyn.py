@@ -313,10 +313,7 @@ class AnalyticalElementalAnalysis(ElementalAnalysis):
 class Species(BaseClass):
     rdfs_isDefinedBy                    = OntoSpecies
     altLabel                            : Optional[AltLabel[str]]                                           = set()
-    has1H1HNMR                          : Optional[Has1H1HNMR[HNMRSpectra]]                                 = set()
-    label                               : Optional[Label[str]]                                              = set()
-    hasFourierTransformSpectrum         : Optional[HasFourierTransformSpectrum[FourierTransformSpectrum]]   = set()
-    hasElementalAnalysis                : Optional[HasElementalAnalysis[ElementalAnalysis]]                 = set()
+    
 class ScalarValue(BaseClass):
     rdfs_isDefinedBy                    = OntoCapeSystem
     hasUnit                             : Optional[om.HasUnit[om.UnitOfMeasure]]                 = set()
@@ -398,6 +395,10 @@ class ChemicalSynthesis(BaseClass):
 class ChemicalOutput(Species):
     rdfs_isDefinedBy                    = OntoSyn
     isRepresentedBy                     : Optional[IsRepresentedBy[ontomops.MetalOrganicPolyhedron]]         = set()
+    has1H1HNMR                          : Optional[Has1H1HNMR[HNMRSpectra]]                                 = set()
+    label                               : Optional[Label[str]]                                              = set()
+    hasFourierTransformSpectrum         : Optional[HasFourierTransformSpectrum[FourierTransformSpectrum]]   = set()
+    hasElementalAnalysis                : Optional[HasElementalAnalysis[ElementalAnalysis]]                 = set()
 
 class ChemicalTransformation(BaseClass):
     rdfs_isDefinedBy                    = OntoSyn

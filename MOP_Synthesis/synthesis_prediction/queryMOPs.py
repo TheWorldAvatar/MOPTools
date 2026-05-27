@@ -14,7 +14,13 @@ MATERIAL_TO_SPECIES_PRED = "<http://www.theworldavatar.com/ontology/ontocape/mat
 PAPER1_DOI = "10.1021/jacs.2c03402"
 PAPER2_DOI = "Placeholder DOI for TWA OGM"
 
-def simple_query(mop0_label,assembled_mop_dois):
+def simple_query(mop0_label,assembled_mop_dois,novel):
+
+        if novel is True:
+                #mop_x_filter = f"""FILTER (?DOI_x IN ({str(assembled_mop_dois)[1:-1]}))"""
+                mop_x_filter = f"""FILTER (?DOI_x IN ('{str(assembled_mop_dois[0])}'))"""
+        else:
+                mop_x_filter = f"""FILTER (?DOI_x NOT IN ({str(assembled_mop_dois)[1:-1]}))"""
 
         query = f"""
         {PREFIX_ONTOMOPS}
@@ -31,7 +37,10 @@ def simple_query(mop0_label,assembled_mop_dois):
         ?MOP_x a mop:MetalOrganicPolyhedron ;
                 mop:hasChemicalBuildingUnit ?metalCBU_0 ;
                 mop:hasChemicalBuildingUnit ?organicCBU_x ;
+                mop:hasProvenance/mop:hasReferenceDOI ?DOI_x ;
                 mop:hasMOPFormula ?MOPLabel_x .
+
+        {mop_x_filter}
         
         ?organicCBU_x mop:hasBindingSite/rdf:type mop:OrganicSite .
         FILTER (?organicCBU_x != ?organicCBU_0)
