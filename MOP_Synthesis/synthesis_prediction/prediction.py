@@ -14,14 +14,14 @@ import ontosyn
 Zr_H2BDC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_e67c729f-f153-4742-9fee-e00c623d151b"
 Zr_H3BTC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_1d52f054-9421-4aac-bd29-76d8a9519ccb"
 Zr_H2BPDC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_3d71c19a-ab54-4993-8c94-267dcfe41792"
-mop0_iris = [Zr_H2BDC_MOP_IRI,Zr_H2BPDC_MOP_IRI,Zr_H3BTC_MOP_IRI]
-#mop0_iris = [Zr_H2BDC_MOP_IRI]
+#mop0_iris = [Zr_H2BDC_MOP_IRI,Zr_H2BPDC_MOP_IRI,Zr_H3BTC_MOP_IRI]
+mop0_iris = [Zr_H3BTC_MOP_IRI]
 
 
-MOP_NOVELTY = True
+MOP_NOVELTY = False
 
 ASSEMBLED_MOP_DOI_1 = "10.1021/jacs.2c03402"
-ASSEMBLED_MOP_DOI_2 = "Placeholder DOI for TWA OGM"
+ASSEMBLED_MOP_DOI_2 = "10.1039/D5DD00069F"
 assembled_mop_dois = [ASSEMBLED_MOP_DOI_1,ASSEMBLED_MOP_DOI_2]
 
 mops_client = PySparqlClient(credentials.ONTOMOPS_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
@@ -42,12 +42,15 @@ def getMOPSynthesis(mop):
     if len(list(syn_iri)) != 1:
         return False
     else:
-        if mop == 'https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_ea080404-38bb-462e-a885-49f48daca41e' or mop == 'https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_c15f0d6b-e265-48d0-9248-2b8e2df34bbb' or mop == 'https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_793984ba-26f8-4770-aca3-e94b07f632f4':
-            [syn] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn_iri)[0]["chemSyn"],syn_client,-1)
-            return syn
-        else:
-            [syn] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn_iri)[0]["chemSyn"],syn_client,-1)
-            return syn
+        [syn] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn_iri)[0]["chemSyn"],syn_client,4)
+        return syn
+        #if mop == 'https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_ea080404-38bb-462e-a885-49f48daca41e' or mop == 'https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_c15f0d6b-e265-48d0-9248-2b8e2df34bbb' or mop == 'https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_793984ba-26f8-4770-aca3-e94b07f632f4':
+        #if mop == 'https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_c15f0d6b-e265-48d0-9248-2b8e2df34bbb':
+        #    [syn] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn_iri)[0]["chemSyn"],syn_client,-1)
+        #    return False
+        #else:
+        #    [syn] = ontosyn.ChemicalSynthesis.pull_from_kg(list(syn_iri)[0]["chemSyn"],syn_client,4)
+        #    return syn
 
 def compareHeating(syn1,syn2):
     heat1 = getMainHeating(syn1)
@@ -127,7 +130,7 @@ def getValue(meas,defaultString="unknown"):
 for mop0 in mop0_list:
 
     mop0_label = list(mop0.hasMOPFormula)[0]
-    mops_query = queryMOPs.simple_query(mop0_label,assembled_mop_dois,MOP_NOVELTY)
+    mops_query = queryMOPs.simple_query(mop0_label,assembled_mop_dois,ASSEMBLED_MOP_DOI_1,MOP_NOVELTY)
     predictable_mops = mops_client.perform_query(mops_query)
     
     rows = []

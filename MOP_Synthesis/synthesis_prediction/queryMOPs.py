@@ -14,13 +14,14 @@ MATERIAL_TO_SPECIES_PRED = "<http://www.theworldavatar.com/ontology/ontocape/mat
 PAPER1_DOI = "10.1021/jacs.2c03402"
 PAPER2_DOI = "Placeholder DOI for TWA OGM"
 
-def simple_query(mop0_label,assembled_mop_dois,novel):
+def simple_query(mop0_label,assembled_mop_dois,synthesisable_mop_doi,novel):
+
+        assembled_mops = str(assembled_mop_dois)[1:-1]
 
         if novel is True:
-                #mop_x_filter = f"""FILTER (?DOI_x IN ({str(assembled_mop_dois)[1:-1]}))"""
-                mop_x_filter = f"""FILTER (?DOI_x IN ('{str(assembled_mop_dois[0])}'))"""
+                mop_x_filter = f"""FILTER (?DOI_x IN ('{synthesisable_mop_doi}'))"""
         else:
-                mop_x_filter = f"""FILTER (?DOI_x NOT IN ({str(assembled_mop_dois)[1:-1]}))"""
+                mop_x_filter = f"""FILTER (?DOI_x NOT IN ({assembled_mops}))"""
 
         query = f"""
         {PREFIX_ONTOMOPS}
@@ -52,14 +53,14 @@ def simple_query(mop0_label,assembled_mop_dois,novel):
                 mop:hasMOPFormula ?MOPLabel_2 .
         ?metalCBU_2 mop:hasBindingSite/rdf:type mop:MetalSite .
         FILTER (?metalCBU_2 != ?metalCBU_0 )
-        FILTER (?DOI_2 NOT IN ({str(assembled_mop_dois)[1:-1]}))
+        FILTER (?DOI_2 NOT IN ({assembled_mops}))
 
         ?MOP_1 a mop:MetalOrganicPolyhedron ;
                 mop:hasChemicalBuildingUnit ?metalCBU_2 ;
                 mop:hasChemicalBuildingUnit ?organicCBU_0 ;
                 mop:hasProvenance/mop:hasReferenceDOI ?DOI_1 ;
                 mop:hasMOPFormula ?MOPLabel_1 .
-        FILTER (?DOI_1 NOT IN ({str(assembled_mop_dois)[1:-1]}))
+        FILTER (?DOI_1 NOT IN ({assembled_mops}))
 
         }}
         """
