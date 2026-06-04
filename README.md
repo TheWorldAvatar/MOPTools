@@ -17,3 +17,7 @@ The folder "twa_mops" contains all code of MOPs-related applications used in [pr
 
 ## MOP Synthesis 
 The folder "MOP_Literature_Extraction" contains all code and embedded LLM prompts used for an automated pipeline that extracts reported MOP synthesis descriptions from the literature. As described in [preprint 336](https://como.ceb.cam.ac.uk/preprints/336/), this pipeline was used to extract nearly 300 synthesis procedures related to the original 151 known MOPs and integrate within TWA for analysis and retrosynthetic efforts.
+
+## TO DO:
+
+- In [twa_mops/mops.env](twa_mops/mops.env), instead of using hard-coded IP addresses, we should aim to use an alias such as `mops.theworldavatar.io` (whilst removing any custom port numbers). In order to make that work, at a minimum, the following would be required: Spin up an nginx container that forwards ports 80/443 to 3838 (or wherever the local stack is hosted, and don't forget to configure the firewall appropriately). Enable `https` (not just `http`). Otherwise, cloudflare will block any forwarded requests.
