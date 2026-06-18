@@ -1046,7 +1046,7 @@ class ChemicalBuildingUnit(BaseClass):
         if not direct_binding:
             raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
 
-        binding_sides, assemb_center, atom_points = cls.process_geometry_json(cbu_json, ocn, binding_fragment, gbu_type, metal_site)
+        binding_sites, assemb_center, atom_points = cls.process_geometry_json(cbu_json, ocn, binding_fragment, gbu_type, metal_site)
         # prepare the geometry of the CBU
         cbu_iri = cls.init_instance_iri()
         cbu_xyz_file = f"{cbu_iri.split('/')[-1]}.xyz"
@@ -1057,7 +1057,7 @@ class ChemicalBuildingUnit(BaseClass):
             instance_iri=cbu_iri,
             # TODO hasBindingDirection should be modified once side-binding is implemented
             hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
-            hasBindingSite=binding_sides,
+            hasBindingSite=binding_sites,
             isFunctioningAs=gbu if gbu is not None else set(),
             hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
             hasMolecularWeight=ontospecies.MolecularWeight.from_xyz_file(cbu_xyz_file),
