@@ -510,6 +510,7 @@ class GBUConnectingPoint(CoordinatePoint):
 class GBUCoordinateCenter(CoordinatePoint):
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
     hasGBUType: Optional[HasGBUType[GenericBuildingUnitType]] = None
+    _parent_gbu: Optional['GenericBuildingUnit'] = None  # Required reference to parent GBU for type information
 
     @property
     def vector_from_am_center(self) -> Vector:
@@ -524,10 +525,13 @@ class GBUCoordinateCenter(CoordinatePoint):
     def vector_to_connecting_point_plane(self):
         """
         Normal vector for the connecting-point geometry.
-        Uses the parent's GBU type via a back-reference (_parent_gbu) set during AM construction.
-        Falls back gracefully if the back-ref is missing.
+        Requires the parent GBU to be set via _parent_gbu for type information.
         """
-        gbu_type = list(self.hasGBUType)[0].label if self.hasGBUType else ""
+        if not self._parent_gbu:
+            raise ValueError(f"Parent GBU not set for GBUCoordinateCenter {self.instance_iri}. "
+                           f"Use from_assemble() or ensure _parent_gbu is set before accessing this property.")
+        
+        gbu_type = list(self._parent_gbu.hasGBUType)[0].label
 
         _cps = sorted(list(self.hasGBUConnectingPoint), key=lambda x: x.coordinates.x)
         connecting_points = [p.coordinates for p in _cps]
@@ -540,7 +544,7 @@ class GBUCoordinateCenter(CoordinatePoint):
                 _v = line.normal_vector_from_point_to_line(Point(x=0, y=0, z=0))
                 v = Vector.from_array(_v.as_array)
             elif "2-bent" in gbu_type:
-                # 2-bent (default if unknown): use normal at this coordinate center
+                # 2-bent: use normal at this coordinate center
                 v = line.normal_vector_from_point_to_line(self.coordinates)
             else:
                 raise ValueError(f"Cannot determine GBU type for GBUCoordinateCenter; "
@@ -648,9 +652,8 @@ class MolecularFragment(BaseClass):
 
     @property
     def charge(self):
-        #return list(list(list(self.hasCharge)[0].hasValue)[0].hasNumericalValue)[0]
-        charge_obj = list(self.hasCharge)[0]  # Get the Charge instance
-        return list(charge_obj.hasNumericalValue)[0]  # Directly access hasNumericalValue
+        return list(list(list(self.hasCharge)[0].hasValue)[0].hasNumericalValue)[0]
+
     @property
     def molecular_weight(self):
         return list(list(list(self.hasMolecularWeight)[0].hasValue)[0].hasNumericalValue)[0]
@@ -1043,7 +1046,7 @@ class ChemicalBuildingUnit(BaseClass):
         if not direct_binding:
             raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
 
-        binding_sites, assemb_center, atom_points = cls.process_geometry_json(cbu_json, ocn, binding_fragment, gbu_type, metal_site)
+        binding_sides, assemb_center, atom_points = cls.process_geometry_json(cbu_json, ocn, binding_fragment, gbu_type, metal_site)
         # prepare the geometry of the CBU
         cbu_iri = cls.init_instance_iri()
         cbu_xyz_file = f"{cbu_iri.split('/')[-1]}.xyz"
@@ -1054,7 +1057,7 @@ class ChemicalBuildingUnit(BaseClass):
             instance_iri=cbu_iri,
             # TODO hasBindingDirection should be modified once side-binding is implemented
             hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
-            hasBindingSite=binding_sites,
+            hasBindingSite=binding_sides,
             isFunctioningAs=gbu if gbu is not None else set(),
             hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
             hasMolecularWeight=ontospecies.MolecularWeight.from_xyz_file(cbu_xyz_file),
@@ -1064,88 +1067,85 @@ class ChemicalBuildingUnit(BaseClass):
         )
 
     @classmethod
-    def from_geometry_xyz(
-        cls,
-        cbu_formula,
-        cbu_xyz_fpath,
-        charge,
-        ocn,
-        binding_fragment,
-        gbu_type,
-        gbu: str = None,
-        direct_binding: bool = True,
-        metal_site: bool = False
-    ):
+    def from_geometry_xyz(cls, cbu_formula, cbu_xyz_fpath, charge, ocn, binding_fragment, gbu_type, gbu: str = None, direct_binding: bool = True, metal_site: bool = False):
         """
-        Create a CBU instance from an XYZ file with dummy atoms (e.g., 'X').
-
-        Args:
-            cbu_formula: Chemical formula of the CBU (e.g., '[(C6H3)(CH3)(CO2)2]').
-            cbu_xyz_fpath: Path to the XYZ file.
-            charge: Numerical charge value (e.g., -2).
-            ocn: Coordination number (e.g., 2).
-            binding_fragment: Binding fragment (e.g., 'CO2').
-            gbu_type: GBU type (e.g., '2-linear').
-            gbu: Optional GBU IRI.
-            direct_binding: Whether to use direct binding (default: True).
-            metal_site: Whether it's a metal site (default: False).
+        Create a ChemicalBuildingUnit from an XYZ geometry file.
+        
+        The XYZ file format should contain:
+        - Line 1: Number of atoms
+        - Line 2: Comment or empty line
+        - Lines 3+: atom_type x y z (space or tab separated)
+        
+        Special atom type 'X' is treated as a dummy atom (binding site).
+        Special atom type 'CENTER' marks the center point.
+        
+        Parameters
+        ----------
+        cbu_formula : str
+            Chemical formula of the CBU
+        cbu_xyz_fpath : str
+            Path to the XYZ file
+        charge : float
+            Charge of the CBU
+        ocn : int
+            Outer coordination number
+        binding_fragment : str
+            Type of binding fragment (e.g., 'CO2', 'Metal')
+        gbu_type : str
+            Type of Generic Building Unit
+        gbu : str, optional
+            IRI of the Generic Building Unit
+        direct_binding : bool
+            Whether binding is direct (default: True)
+        metal_site : bool
+            Whether this is a metal site (default: False)
+        
+        Returns
+        -------
+        ChemicalBuildingUnit
+            New CBU instance created from the XYZ geometry
         """
-        if not direct_binding:
-            raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
-
-        # Parse XYZ file into a JSON-like structure
-        cbu_json = cls._parse_xyz_to_json(cbu_xyz_fpath)
-
-        # Reuse the existing JSON processing logic
-        binding_sites, assemb_center, atom_points = cls.process_geometry_json(
-            cbu_json, ocn, binding_fragment, gbu_type, metal_site
-        )
-
-        # Prepare the geometry of the CBU
-        cbu_iri = cls.init_instance_iri()
-        cbu_xyz_file = f"{cbu_iri.split('/')[-1]}.xyz"
-        cbu_geo = ontospecies.Geometry.from_points(atom_points, cbu_xyz_file)
-
-        # Instantiate actual CBU
-        return cls(
-            instance_iri=cbu_iri,
-            hasBindingDirection=DIRECT_BINDING,
-            hasBindingSite=binding_sites,
-            isFunctioningAs=gbu if gbu is not None else set(),
-            hasCharge=ontospecies.Charge(
-                hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)
-            ),
-            hasMolecularWeight=ontospecies.MolecularWeight.from_xyz_file(cbu_xyz_file),
-            hasGeometry=cbu_geo,
-            hasCBUFormula=cbu_formula,
-            hasCBUAssemblyCenter=assemb_center
-        )
-
-    @classmethod
-    def _parse_xyz_to_json(cls, xyz_file: str):
-        """
-        Parse an XYZ file into a JSON-like dictionary format.
-        Preserves atom symbols (including dummy atoms like 'X') and coordinates.
-        """
-        import uuid
+        # Parse the XYZ file
         cbu_json = {}
-        with open(xyz_file, 'r') as f:
-            lines = f.readlines()
-
-        # Skip the first two lines (number of atoms and comment)
-        for line in lines[2:]:
-            parts = line.strip().split()
+        with open(cbu_xyz_fpath, 'r') as file:
+            lines = file.readlines()
+        
+        # First line is the number of atoms
+        num_atoms = int(lines[0].strip())
+        
+        # Skip the second line (comment)
+        # Parse the remaining lines
+        atom_idx = 0
+        for i in range(2, min(2 + num_atoms, len(lines))):
+            parts = lines[i].split()
             if len(parts) >= 4:
-                atom_symbol = parts[0]
-                x, y, z = map(float, parts[1:4])
-                # Use UUID as key, but preserve atom_symbol in the value
-                cbu_json[str(uuid.uuid4())] = {
-                    "atom": atom_symbol,  # Preserves 'X' for dummy atoms
+                atom_type = parts[0]
+                x = float(parts[1])
+                y = float(parts[2])
+                z = float(parts[3])
+                
+                # Create a unique ID for each atom
+                atom_id = f"atom_{atom_idx}"
+                cbu_json[atom_id] = {
+                    "atom": atom_type,
                     "coordinate_x": x,
                     "coordinate_y": y,
                     "coordinate_z": z
                 }
-        return cbu_json
+                atom_idx += 1
+        
+        # Call the existing from_geometry_json method with the parsed data
+        return cls.from_geometry_json(
+            cbu_formula=cbu_formula,
+            cbu_json=cbu_json,
+            charge=charge,
+            ocn=ocn,
+            binding_fragment=binding_fragment,
+            gbu_type=gbu_type,
+            gbu=gbu,
+            direct_binding=direct_binding,
+            metal_site=metal_site
+        )
 
     def create_cbu_from_ordered_fragments_and_template(
         template: ChemicalBuildingUnitTemplate,
@@ -1766,6 +1766,9 @@ class MetalOrganicPolyhedron(CoordinationCage):
                 gbu: GenericBuildingUnit = KnowledgeGraph.get_object_from_lookup(gbu)
             # NOTE here we need to block the binding sites based on the GBU
             cbu.allocate_active_binding_sites(gbu.modularity)
+            # Set parent GBU reference on all coordinate centers so they can access the GBU type
+            for gbu_center in gbu.hasGBUCoordinateCenter:
+                gbu_center._parent_gbu = gbu
             # TODO optimise below
             # rotate the CBU to match the GBU
             # rotate the vector from center to binding site plane of CBU to the vector from center to connecting point plane of GBU
