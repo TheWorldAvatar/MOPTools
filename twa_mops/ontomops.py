@@ -648,8 +648,9 @@ class MolecularFragment(BaseClass):
 
     @property
     def charge(self):
-        return list(list(list(self.hasCharge)[0].hasValue)[0].hasNumericalValue)[0]
-
+        #return list(list(list(self.hasCharge)[0].hasValue)[0].hasNumericalValue)[0]
+        charge_obj = list(self.hasCharge)[0]  # Get the Charge instance
+        return list(charge_obj.hasNumericalValue)[0]  # Directly access hasNumericalValue
     @property
     def molecular_weight(self):
         return list(list(list(self.hasMolecularWeight)[0].hasValue)[0].hasNumericalValue)[0]
@@ -1042,7 +1043,7 @@ class ChemicalBuildingUnit(BaseClass):
         if not direct_binding:
             raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
 
-        binding_sides, assemb_center, atom_points = cls.process_geometry_json(cbu_json, ocn, binding_fragment, gbu_type, metal_site)
+        binding_sites, assemb_center, atom_points = cls.process_geometry_json(cbu_json, ocn, binding_fragment, gbu_type, metal_site)
         # prepare the geometry of the CBU
         cbu_iri = cls.init_instance_iri()
         cbu_xyz_file = f"{cbu_iri.split('/')[-1]}.xyz"
@@ -1053,7 +1054,7 @@ class ChemicalBuildingUnit(BaseClass):
             instance_iri=cbu_iri,
             # TODO hasBindingDirection should be modified once side-binding is implemented
             hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
-            hasBindingSite=binding_sides,
+            hasBindingSite=binding_sites,
             isFunctioningAs=gbu if gbu is not None else set(),
             hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
             hasMolecularWeight=ontospecies.MolecularWeight.from_xyz_file(cbu_xyz_file),
@@ -1061,6 +1062,90 @@ class ChemicalBuildingUnit(BaseClass):
             hasCBUFormula=cbu_formula,
             hasCBUAssemblyCenter=assemb_center
         )
+
+    @classmethod
+    def from_geometry_xyz(
+        cls,
+        cbu_formula,
+        cbu_xyz_fpath,
+        charge,
+        ocn,
+        binding_fragment,
+        gbu_type,
+        gbu: str = None,
+        direct_binding: bool = True,
+        metal_site: bool = False
+    ):
+        """
+        Create a CBU instance from an XYZ file with dummy atoms (e.g., 'X').
+
+        Args:
+            cbu_formula: Chemical formula of the CBU (e.g., '[(C6H3)(CH3)(CO2)2]').
+            cbu_xyz_fpath: Path to the XYZ file.
+            charge: Numerical charge value (e.g., -2).
+            ocn: Coordination number (e.g., 2).
+            binding_fragment: Binding fragment (e.g., 'CO2').
+            gbu_type: GBU type (e.g., '2-linear').
+            gbu: Optional GBU IRI.
+            direct_binding: Whether to use direct binding (default: True).
+            metal_site: Whether it's a metal site (default: False).
+        """
+        if not direct_binding:
+            raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
+
+        # Parse XYZ file into a JSON-like structure
+        cbu_json = cls._parse_xyz_to_json(cbu_xyz_fpath)
+
+        # Reuse the existing JSON processing logic
+        binding_sites, assemb_center, atom_points = cls.process_geometry_json(
+            cbu_json, ocn, binding_fragment, gbu_type, metal_site
+        )
+
+        # Prepare the geometry of the CBU
+        cbu_iri = cls.init_instance_iri()
+        cbu_xyz_file = f"{cbu_iri.split('/')[-1]}.xyz"
+        cbu_geo = ontospecies.Geometry.from_points(atom_points, cbu_xyz_file)
+
+        # Instantiate actual CBU
+        return cls(
+            instance_iri=cbu_iri,
+            hasBindingDirection=DIRECT_BINDING,
+            hasBindingSite=binding_sites,
+            isFunctioningAs=gbu if gbu is not None else set(),
+            hasCharge=ontospecies.Charge(
+                hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)
+            ),
+            hasMolecularWeight=ontospecies.MolecularWeight.from_xyz_file(cbu_xyz_file),
+            hasGeometry=cbu_geo,
+            hasCBUFormula=cbu_formula,
+            hasCBUAssemblyCenter=assemb_center
+        )
+
+    @classmethod
+    def _parse_xyz_to_json(cls, xyz_file: str):
+        """
+        Parse an XYZ file into a JSON-like dictionary format.
+        Preserves atom symbols (including dummy atoms like 'X') and coordinates.
+        """
+        import uuid
+        cbu_json = {}
+        with open(xyz_file, 'r') as f:
+            lines = f.readlines()
+
+        # Skip the first two lines (number of atoms and comment)
+        for line in lines[2:]:
+            parts = line.strip().split()
+            if len(parts) >= 4:
+                atom_symbol = parts[0]
+                x, y, z = map(float, parts[1:4])
+                # Use UUID as key, but preserve atom_symbol in the value
+                cbu_json[str(uuid.uuid4())] = {
+                    "atom": atom_symbol,  # Preserves 'X' for dummy atoms
+                    "coordinate_x": x,
+                    "coordinate_y": y,
+                    "coordinate_z": z
+                }
+        return cbu_json
 
     def create_cbu_from_ordered_fragments_and_template(
         template: ChemicalBuildingUnitTemplate,
