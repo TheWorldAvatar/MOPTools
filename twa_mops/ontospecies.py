@@ -3,6 +3,7 @@ from typing import List, Optional
 from twa.data_model.base_ontology import BaseOntology, BaseClass, ObjectProperty, DatatypeProperty
 import om
 import geo
+import os
 
 from rdkit.Chem import GetPeriodicTable
 from rdkit.Chem.rdmolfiles import MolFromXYZFile
@@ -64,7 +65,22 @@ class Geometry(BaseClass):
         lst_pt = []
         remote_file_path = list(self.hasGeometryFile)[0]
         downloaded_file_path = remote_file_path.split('/')[-1]
-        sparql_client.download_file(remote_file_path, downloaded_file_path)
+
+        # If the path is local, use it directly
+        if not remote_file_path.startswith(('http://', 'https://')):
+            downloaded_file_path = remote_file_path
+        else:
+            # Otherwise, download from the remote URL
+            sparql_client.download_file(remote_file_path, downloaded_file_path)
+
+        # Ensure the file exists
+        if not os.path.exists(downloaded_file_path):
+            raise FileNotFoundError(
+                f"File not found: {downloaded_file_path}. "
+                f"Remote path: {remote_file_path}. "
+                "Check if the file was created and is accessible."
+            )
+
         mol = MolFromXYZFile(downloaded_file_path)
         for a in mol.GetAtoms():
             pos = mol.GetConformer().GetAtomPosition(a.GetIdx())
