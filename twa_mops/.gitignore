@@ -4,3 +4,4 @@
 *.csv
 *.json
 *.owl
+__pycache__/
