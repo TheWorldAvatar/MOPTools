@@ -1,0 +1,3 @@
+include twa_mops/README.md
+include twa_mops/data/*.xyz
+recursive-include twa_mops/kg/queries *.sparql

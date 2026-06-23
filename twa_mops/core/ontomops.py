@@ -10,11 +10,11 @@ import json
 import os
 
 from twa.data_model.base_ontology import BaseOntology, BaseClass, ObjectProperty, DatatypeProperty, KnowledgeGraph
-import ontospecies
-import om
-import cavity_and_pore_size as cap
+from . import ontospecies
+from twa_mops.utils import om
+from twa_mops.scripts import cavity_and_pore_size as cap
 
-from geo import Point, Vector, Line, Plane, RotationMatrix, Quaternion
+from .geo import Point, Vector, Line, Plane, RotationMatrix, Quaternion
 
 BINDING_FRAGMENT_METAL = 'Metal'
 BINDING_FRAGMENT_CO2 = 'CO2'
@@ -105,7 +105,18 @@ class GenericBuildingUnitType(BaseClass):
 
     @property
     def label(self):
-        return f"{list(self.hasModularity)[0]}-{list(self.hasPlanarity)[0]}"
+        # Handle case where hasModularity/hasPlanarity contain IRIs (strings) instead of objects
+        modularity = list(self.hasModularity)[0] if list(self.hasModularity) else ''
+        planarity = list(self.hasPlanarity)[0] if list(self.hasPlanarity) else ''
+        
+        # If they are strings (IRIs), extract the label from the IRI
+        if isinstance(modularity, str):
+            # Extract label from IRI like ".../3-planar" -> "3-planar"
+            modularity = modularity.split('/')[-1]
+        if isinstance(planarity, str):
+            planarity = planarity.split('/')[-1]
+        
+        return f"{modularity}-{planarity}"
 
 class CoordinatePoint(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
@@ -122,25 +133,61 @@ class GenericBuildingUnit(BaseClass):
     hasGBUType: HasGBUType[GenericBuildingUnitType]
     hasGBUCoordinateCenter: HasGBUCoordinateCenter[GBUCoordinateCenter]
 
+    def _get_gbu_type_obj(self):
+        """Helper to resolve hasGBUType to object."""
+        gbu_types = list(self.hasGBUType)
+        if gbu_types and isinstance(gbu_types[0], str):
+            
+            return KnowledgeGraph.get_object_from_lookup(gbu_types[0])
+        return gbu_types[0] if gbu_types else None
+
     @property
     def gbu_type(self):
-        return list(self.hasGBUType)[0].label
+        gbu_type_obj = self._get_gbu_type_obj()
+        return gbu_type_obj.label if gbu_type_obj else None
 
     @property
     def is_4_planar(self):
-        return list(self.hasGBUType)[0].label == '4-planar'
+        gbu_type_obj = self._get_gbu_type_obj()
+        return gbu_type_obj.label == '4-planar' if gbu_type_obj else False
 
     @property
     def is_2_bent(self):
-        return list(self.hasGBUType)[0].label == GBU_TYPE_2_BENT
+        gbu_type_obj = self._get_gbu_type_obj()
+        return gbu_type_obj.label == GBU_TYPE_2_BENT if gbu_type_obj else False
 
     @property
     def is_2_linear(self):
-        return list(self.hasGBUType)[0].label == GBU_TYPE_2_LINEAR
+        gbu_type_obj = self._get_gbu_type_obj()
+        return gbu_type_obj.label == GBU_TYPE_2_LINEAR if gbu_type_obj else False
 
     @property
     def modularity(self):
-        return list(list(self.hasGBUType)[0].hasModularity)[0]
+        # Handle case where hasGBUType contains IRIs (strings) instead of objects
+        gbu_types = list(self.hasGBUType)
+        if gbu_types and isinstance(gbu_types[0], str):
+            
+            gbu_type_obj = KnowledgeGraph.get_object_from_lookup(gbu_types[0])
+        else:
+            gbu_type_obj = gbu_types[0] if gbu_types else None
+        
+        if gbu_type_obj is None:
+            raise ValueError(f"No GBUType found for GenericBuildingUnit {self.instance_iri}")
+        
+        # Handle case where hasModularity contains IRIs (strings) instead of objects
+        # hasModularity might be a property that returns strings or objects
+        if hasattr(gbu_type_obj, 'hasModularity'):
+            modularities = list(gbu_type_obj.hasModularity)
+            if modularities and isinstance(modularities[0], str):
+                
+                return KnowledgeGraph.get_object_from_lookup(modularities[0])
+            return modularities[0] if modularities else None
+        else:
+            # hasModularity is a string IRI, extract the value
+            if isinstance(gbu_type_obj, str):
+                # Extract from IRI
+                return gbu_type_obj.split('/')[-1]
+            return None
 
 class GenericBuildingUnitNumber(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
@@ -163,7 +210,14 @@ class PoreRing(BaseClass):
         for cc in self.isFormedBy:
             cc: GBUCoordinateCenter
             cps = list(cc.hasGBUConnectingPoint)
+            # Handle case where hasGBUConnectingPoint contains IRIs (strings) instead of objects
+            resolved_cps = []
             for cp in cps:
+                if isinstance(cp, str):
+                    
+                    cp = KnowledgeGraph.get_object_from_lookup(cp)
+                resolved_cps.append(cp)
+            for cp in resolved_cps:
                 if cp.instance_iri not in _pairs:
                     _pairs[cp.instance_iri] = [cc]
                 else:
@@ -189,12 +243,38 @@ class AssemblyModel(BaseClass):
 
     def visualise(self):
         rows = []
-        for gbu in self.hasGenericBuildingUnit:
+        # Handle case where hasGenericBuildingUnit contains IRIs (strings) instead of objects
+        gbus = list(self.hasGenericBuildingUnit)
+        resolved_gbus = []
+        for gbu in gbus:
+            if isinstance(gbu, str):
+                
+                gbu = KnowledgeGraph.get_object_from_lookup(gbu)
+            resolved_gbus.append(gbu)
+        
+        for gbu in resolved_gbus:
             gbu: GenericBuildingUnit
-            for gcc in gbu.hasGBUCoordinateCenter:
+            # Handle case where hasGBUCoordinateCenter contains IRIs (strings) instead of objects
+            gccs = list(gbu.hasGBUCoordinateCenter)
+            resolved_gccs = []
+            for gcc in gccs:
+                if isinstance(gcc, str):
+                    
+                    gcc = KnowledgeGraph.get_object_from_lookup(gcc)
+                resolved_gccs.append(gcc)
+            
+            for gcc in resolved_gccs:
                 gcc: GBUCoordinateCenter
                 rows.append([gbu.gbu_type, gcc.instance_iri, str(gcc.rdfs_comment), gcc.coordinates.x, gcc.coordinates.y, gcc.coordinates.z])
-                for cp in gcc.hasGBUConnectingPoint:
+                # Handle case where hasGBUConnectingPoint contains IRIs (strings) instead of objects
+                cps = list(gcc.hasGBUConnectingPoint)
+                resolved_cps = []
+                for cp in cps:
+                    if isinstance(cp, str):
+                        
+                        cp = KnowledgeGraph.get_object_from_lookup(cp)
+                    resolved_cps.append(cp)
+                for cp in resolved_cps:
                     cp: GBUConnectingPoint
                     rows.append(['ConnectingPoint', cp.instance_iri, str(cp.rdfs_comment), cp.coordinates.x, cp.coordinates.y, cp.coordinates.z])
         df = pd.DataFrame(rows, columns=['Label', 'IRI', 'Position', 'X', 'Y', 'Z'])
@@ -331,7 +411,15 @@ class AssemblyModel(BaseClass):
         pairs = {}
         for cc in sorted(self.hasGBUCoordinateCenter, key=lambda x: x.instance_iri):
             cc: GBUCoordinateCenter
-            cps = sorted(list(cc.hasGBUConnectingPoint), key=lambda x: x.instance_iri)
+            # Handle case where hasGBUConnectingPoint contains IRIs (strings) instead of objects
+            cps_list = list(cc.hasGBUConnectingPoint)
+            resolved_cps = []
+            for cp in cps_list:
+                if isinstance(cp, str):
+                    
+                    cp = KnowledgeGraph.get_object_from_lookup(cp)
+                resolved_cps.append(cp)
+            cps = sorted(resolved_cps, key=lambda x: x.instance_iri)
             for cp in cps:
                 if cp.instance_iri not in pairs:
                     pairs[cp.instance_iri] = [cc]
@@ -533,7 +621,17 @@ class GBUCoordinateCenter(CoordinatePoint):
         
         gbu_type = list(self._parent_gbu.hasGBUType)[0].label
 
-        _cps = sorted(list(self.hasGBUConnectingPoint), key=lambda x: x.coordinates.x)
+        # Handle case where hasGBUConnectingPoint contains IRIs (strings) instead of objects
+        cps_list = list(self.hasGBUConnectingPoint)
+        resolved_cps = []
+        for cp in cps_list:
+            if isinstance(cp, str):
+                # Resolve IRI to object using KnowledgeGraph lookup
+                
+                cp = KnowledgeGraph.get_object_from_lookup(cp)
+            resolved_cps.append(cp)
+        
+        _cps = sorted(resolved_cps, key=lambda x: x.coordinates.x)
         connecting_points = [p.coordinates for p in _cps]
 
         if len(connecting_points) < 3:
@@ -562,7 +660,15 @@ class GBUCoordinateCenter(CoordinatePoint):
         # find the plane perpendicular to the vector to the average connecting point
         plane = Plane.from_point_and_normal(self.coordinates, self.vector_to_connecting_point_plane)
         # project all connecting points onto the plane
-        projected_points = [plane.project_point(p.coordinates) for p in self.hasGBUConnectingPoint]
+        # Handle case where hasGBUConnectingPoint contains IRIs (strings) instead of objects
+        cps_list = list(self.hasGBUConnectingPoint)
+        resolved_cps = []
+        for cp in cps_list:
+            if isinstance(cp, str):
+                
+                cp = KnowledgeGraph.get_object_from_lookup(cp)
+            resolved_cps.append(cp)
+        projected_points = [plane.project_point(p.coordinates) for p in resolved_cps]
         # find the farthest connecting point and construct a vector from center to it
         farthest_projected_point = self.coordinates.farthest_point(projected_points)
         vector = Vector.from_two_points(start=self.coordinates, end=farthest_projected_point)
@@ -573,7 +679,15 @@ class GBUCoordinateCenter(CoordinatePoint):
         # find the plane perpendicular to the vector to the average connecting point
         plane = Plane.from_point_and_normal(self.coordinates, self.vector_to_connecting_point_plane)
         # project all connecting points onto the plane
-        projected_points = [plane.project_point(p.coordinates) for p in self.hasGBUConnectingPoint]
+        # Handle case where hasGBUConnectingPoint contains IRIs (strings) instead of objects
+        cps_list = list(self.hasGBUConnectingPoint)
+        resolved_cps = []
+        for cp in cps_list:
+            if isinstance(cp, str):
+                
+                cp = KnowledgeGraph.get_object_from_lookup(cp)
+            resolved_cps.append(cp)
+        projected_points = [plane.project_point(p.coordinates) for p in resolved_cps]
         # find the closest pair of connecting points and construct a vector connecting the center to the line connecting them
         closest_pair = Point.closest_pair(projected_points)
         line = Line.from_two_points(start=closest_pair[0], end=closest_pair[1])
@@ -964,16 +1078,24 @@ class ChemicalBuildingUnit(BaseClass):
         return [bs for bs in list(self.hasBindingSite) if not bs.temporarily_blocked]
 
     def allocate_active_binding_sites(self, num: int):
-        for bs in list(self.hasBindingSite)[num:]:
+        # Handle case where hasBindingSite contains IRIs (strings) instead of objects
+        binding_sites = list(self.hasBindingSite)
+        resolved_bs = []
+        for bs in binding_sites:
+            if isinstance(bs, str):
+                
+                bs = KnowledgeGraph.get_object_from_lookup(bs)
+            resolved_bs.append(bs)
+        for bs in resolved_bs[num:]:
             bs.temporarily_blocked = True
 
     def release_blocked_binding_sites(self):
         for bs in self.hasBindingSite:
             bs.temporarily_blocked = False
 
-    def load_geometry_from_fileserver(self, sparql_client):
+    def load_geometry_from_fileserver(self, sparql_client, data_dir=None):
         print("loading xyz from file server")
-        return list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client)
+        return list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client, data_dir=data_dir)
 
     def add_binding_site_and_assembly_center_from_json(
         self, cbu_json_fpath, ocn, binding_fragment: str, gbu_type: str, metal_site: bool = False
@@ -1655,12 +1777,12 @@ class ChemicalBuildingUnit(BaseClass):
                 length_center_to_binding = length_center_to_binding_atoms + min([cap.PERIODIC_TABLE.GetRcovalent(a.label) for a in binding_atoms])
         return rotated_binding_vector, most_possible_binding_site_angle, length_center_to_binding
 
-    def visualise(self, sparql_client = None):
+    def visualise(self, sparql_client = None, data_dir=None):
         rows = []
         if list(self.hasGeometry)[0].hasPoints is None:
             if sparql_client is None:
                 raise ValueError('SPARQL client is required to visualise/load the geometry')
-            self.load_geometry_from_fileserver(sparql_client)
+            self.load_geometry_from_fileserver(sparql_client, data_dir=data_dir)
         # atoms
         for pt in list(self.hasGeometry)[0].hasPoints:
             rows.append([pt.label, pt.x, pt.y, pt.z])
@@ -1734,12 +1856,12 @@ class MetalOrganicPolyhedron(CoordinationCage):
         ccdc: str = set(),
         sparql_client = None,
         upload_geometry: bool = False,
-        data_dir: str = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'data',
-            f'xyz_mops_{datetime.now().year}_{datetime.now().month}_{datetime.now().day}'
-        ),
+        data_dir: str = None,
     ):
+        # Use settings.data_dir if not provided
+        if data_dir is None:
+            from twa_mops.config import settings
+            data_dir = settings.data_dir
         # prepare the variables
         mop_charge = 0
         mop_mw = 0
@@ -1749,12 +1871,28 @@ class MetalOrganicPolyhedron(CoordinationCage):
         gbus = list(am.hasGenericBuildingUnit)
         # place the CBUs according to the GBUs
         cbu_rotation_matrix = {}
+        
         for cbu in lst_cbu:
             cbu: ChemicalBuildingUnit
             if list(cbu.hasGeometry)[0].hasPoints is None:
+                # Geometry points not loaded yet - need to load from file
                 if sparql_client is None:
                     raise ValueError('SPARQL client is required to visualise/load the geometry')
-                list(cbu.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client)
+                try:
+                    list(cbu.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client, data_dir=data_dir)
+                except FileNotFoundError as e:
+                    # Geometry file not found - this is fatal for assembly
+                    # All CBUs are required, we cannot skip any
+                    remote_path = str(e).split("Remote path: ")[1].split(". ")[0] if "Remote path: " in str(e) else "unknown"
+                    raise FileNotFoundError(
+                        f"CRITICAL: Geometry file required for assembly is missing.\n"
+                        f"CBU: {cbu.instance_iri}\n"
+                        f"Missing file: {remote_path}\n\n"
+                        f"To fix this:\n"
+                        f"1. Ensure the file exists on your file server at: {remote_path}\n"
+                        f"2. Or place the file in your data_dir: {settings.data_dir}\n"
+                        f"3. Or check your FS_URL configuration in the .env file"
+                    ) from e
             gbu = cbu.isFunctioningAs.intersection(gbus)
             if len(gbu) == 0:
                 raise ValueError(f'No GBU found for CBU {cbu.instance_iri} in AM {am.instance_iri}')
@@ -1767,7 +1905,11 @@ class MetalOrganicPolyhedron(CoordinationCage):
             # NOTE here we need to block the binding sites based on the GBU
             cbu.allocate_active_binding_sites(gbu.modularity)
             # Set parent GBU reference on all coordinate centers so they can access the GBU type
+            # Handle case where hasGBUCoordinateCenter contains IRIs (strings) instead of objects
             for gbu_center in gbu.hasGBUCoordinateCenter:
+                if isinstance(gbu_center, str):
+                    
+                    gbu_center = KnowledgeGraph.get_object_from_lookup(gbu_center)
                 gbu_center._parent_gbu = gbu
             # TODO optimise below
             # rotate the CBU to match the GBU
@@ -1860,7 +2002,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
             if list(cbu.hasGeometry)[0].hasPoints is None:
                 if sparql_client is None:
                     raise ValueError('SPARQL client is required to load the geometry')
-                cbu.load_geometry_from_fileserver(sparql_client)
+                cbu.load_geometry_from_fileserver(sparql_client, data_dir=data_dir)
             dct_rotated = {
                 gc: [Point.from_array(rm_to_gbu[gc][1].apply(rm_to_gbu[gc][0].apply(pt.as_array)), label=pt.label) for pt in list(cbu.hasGeometry)[0].hasPoints] for gc in rm_to_gbu
             }
@@ -1965,7 +2107,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
         if list(self.hasGeometry)[0].hasPoints is None:
             if sparql_client is None:
                 raise ValueError('SPARQL client is required to visualise/load the geometry')
-            list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client)
+            list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client, data_dir=None)
         for pt in list(self.hasGeometry)[0].hasPoints:
             rows.append([pt.label, pt.x, pt.y, pt.z])
         df = pd.DataFrame(rows, columns=['Atom', 'X', 'Y', 'Z',])

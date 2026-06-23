@@ -1,18 +1,16 @@
-from twa.kg_operations import PySparqlClient
 from twa.conf import config_generic, Config
 from rdflib import Graph, URIRef
-import ontomops
-import ontospecies
-import om
-import alg2
+from twa_mops.core import ontomops, ontospecies
+from twa_mops.utils import om
+from twa_mops.kg import KnowledgeGraphClient
+from twa_mops.kg.algorithms import alg2
 
 class MOPsConfig(Config):
     SPARQL_ENDPOINT: str
 
-endpoint = config_generic(MOPsConfig, env_file='./mops.env').SPARQL_ENDPOINT
-
 if __name__ == "__main__":
-    sparql_client = PySparqlClient(endpoint, endpoint)
+    endpoint = config_generic(MOPsConfig, env_file='./mops.env').SPARQL_ENDPOINT
+    sparql_client = KnowledgeGraphClient(endpoint)
     alg2_result = sparql_client.perform_query(alg2.alg2)
     # Example result:
     # {

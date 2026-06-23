@@ -4,7 +4,11 @@
 import sys
 import os
 
-# Add twa_mops to path
+# Add parent directory to path so twa_mops can be imported as a package
+twa_mops_parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, twa_mops_parent)
+
+# Also add twa_mops directory for direct imports
 twa_mops_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, twa_mops_path)
 
@@ -213,7 +217,7 @@ print("TEST 7: Testing traditional pull_from_kg with new client")
 print("=" * 60)
 
 try:
-    from kg.compatibility import PySparqlClientCompatibility
+    from twa_mops.kg.compatibility import PySparqlClientCompatibility
     
     # Create a compatibility client
     sparql_client = PySparqlClientCompatibility(
@@ -226,14 +230,14 @@ try:
     print("Attempting to pull ChemicalBuildingUnit using traditional method...")
     
     # Import the classes
-    import ontomops
+    from twa_mops.core import ontomops
     
     # Test with a single CBU
     try:
         cbus = ontomops.ChemicalBuildingUnit.pull_from_kg(
             [test_iris[0]],
             sparql_client,
-            depth=0
+            recursive_depth=1
         )
         print(f"Traditional pull_from_kg works: pulled {len(cbus)} CBU(s)")
         if cbus:

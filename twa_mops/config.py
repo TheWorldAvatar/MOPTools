@@ -35,10 +35,11 @@ class Settings(BaseSettings):
     """
     
     # SPARQL endpoint configuration
-    sparql_endpoint: str = "http://localhost:3838/sparql"
+    sparql_endpoint: str = "http://localhost:3838/bigdata/namespace/ontomops/sparql"
     
-    # Data directory
-    data_dir: str = "./data"
+    # Data directory - single consistent location
+    # Relative to current working directory. Recommended: twa_mops/data/
+    data_dir: str = "data"
     
     # Default recursion depth for KG queries
     default_recursion: int = -1

@@ -1,8 +1,8 @@
 from __future__ import annotations
 from typing import List, Optional
 from twa.data_model.base_ontology import BaseOntology, BaseClass, ObjectProperty, DatatypeProperty
-import om
-import geo
+from twa_mops.utils import om
+from twa_mops.core import geo
 import os
 
 from rdkit.Chem import GetPeriodicTable
@@ -61,23 +61,90 @@ class Geometry(BaseClass):
                 f.write(f'{pt.label} {pt.x:.20f} {pt.y:.20f} {pt.z:.20f}\n')
         return cls(hasGeometryFile=file_name, hasPoints=points)
 
-    def load_xyz_from_geometry_file(self, sparql_client):
+    def load_xyz_from_geometry_file(self, sparql_client, data_dir=None):
         lst_pt = []
         remote_file_path = list(self.hasGeometryFile)[0]
         downloaded_file_path = remote_file_path.split('/')[-1]
-
+        
+        # Get file server URL from the client for constructing full URLs
+        fs_url = getattr(sparql_client, 'fs_url', None)
+        if fs_url is None and hasattr(sparql_client, 'sparql_client'):
+            fs_url = getattr(sparql_client.sparql_client, 'fs_url', None)
+        
+        # Get data_dir from settings if not provided
+        if data_dir is None:
+            from twa_mops.config import settings
+            data_dir = settings.data_dir
+        
+        # Ensure data_dir exists
+        if data_dir:
+            os.makedirs(data_dir, exist_ok=True)
+        
         # If the path is local, use it directly
         if not remote_file_path.startswith(('http://', 'https://')):
-            downloaded_file_path = remote_file_path
+            # Check if it's already a local path
+            if os.path.exists(remote_file_path):
+                downloaded_file_path = remote_file_path
+            else:
+                # Try to find the file in data_dir or tutorials
+                search_paths = []
+                if data_dir:
+                    search_paths.append(data_dir)
+                # Also check tutorials directory for CBU files created there
+                search_paths.extend(['tutorials', os.path.join('tutorials', 'data')])
+                
+                found = False
+                for search_path in search_paths:
+                    test_path = os.path.join(search_path, downloaded_file_path)
+                    if os.path.exists(test_path):
+                        downloaded_file_path = test_path
+                        found = True
+                        break
+                
+                if not found:
+                    # Try to download from file server if available
+                    if fs_url:
+                        # It's a filename that needs to be downloaded from the file server
+                        # Construct full remote URL
+                        full_remote_path = f"{fs_url.rstrip('/')}/{remote_file_path}"
+                        try:
+                            sparql_client.download_file(full_remote_path, downloaded_file_path)
+                        except Exception as e:
+                            raise FileNotFoundError(
+                                f"File not found: {downloaded_file_path}. "
+                                f"Remote path: {remote_file_path}. "
+                                f"File server URL: {fs_url}. "
+                                f"Download error: {e}. "
+                                f"Searched paths: {search_paths}"
+                            )
+                    else:
+                        # No file server URL available
+                        raise FileNotFoundError(
+                            f"File not found: {downloaded_file_path}. "
+                            f"Remote path: {remote_file_path}. "
+                            f"File server URL: Not configured. "
+                            f"Searched paths: {search_paths}. "
+                            "Either configure a file server, place the file in your data_dir, "
+                            "or in the tutorials directory."
+                        )
         else:
-            # Otherwise, download from the remote URL
-            sparql_client.download_file(remote_file_path, downloaded_file_path)
+            # It's already a full URL, download directly
+            try:
+                sparql_client.download_file(remote_file_path, downloaded_file_path)
+            except Exception as e:
+                if not os.path.exists(downloaded_file_path):
+                    raise FileNotFoundError(
+                        f"File not found: {downloaded_file_path}. "
+                        f"Remote path: {remote_file_path}. "
+                        f"Download error: {e}"
+                    )
 
         # Ensure the file exists
         if not os.path.exists(downloaded_file_path):
             raise FileNotFoundError(
                 f"File not found: {downloaded_file_path}. "
                 f"Remote path: {remote_file_path}. "
+                f"File server URL: {fs_url or 'Not configured'}. "
                 "Check if the file was created and is accessible."
             )
 

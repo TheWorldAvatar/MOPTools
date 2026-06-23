@@ -1,9 +1,10 @@
 # NOTE script adapted by the original version provided by Dr. Aleksandar Kondinski (ak2332@cam.ac.uk)
 
-from geo import *
+from twa_mops.core.geo import *
 import os
 import csv
 import math
+import numpy as np
 from rdkit.Chem import GetPeriodicTable
 from rdkit.Chem.rdmolfiles import MolFromXYZFile
 
