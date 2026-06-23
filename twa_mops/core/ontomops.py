@@ -241,48 +241,22 @@ class AssemblyModel(BaseClass):
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
     hasPoreRing: Optional[HasPoreRing[PoreRing]] = None
 
-    def visualise(self):
-        rows = []
-        # Handle case where hasGenericBuildingUnit contains IRIs (strings) instead of objects
-        gbus = list(self.hasGenericBuildingUnit)
-        resolved_gbus = []
-        for gbu in gbus:
-            if isinstance(gbu, str):
-                
-                gbu = KnowledgeGraph.get_object_from_lookup(gbu)
-            resolved_gbus.append(gbu)
+    def visualise(self, show_pores: bool = True, backend: str = 'auto', **kwargs):
+        """Visualize the AssemblyModel.
         
-        for gbu in resolved_gbus:
-            gbu: GenericBuildingUnit
-            # Handle case where hasGBUCoordinateCenter contains IRIs (strings) instead of objects
-            gccs = list(gbu.hasGBUCoordinateCenter)
-            resolved_gccs = []
-            for gcc in gccs:
-                if isinstance(gcc, str):
-                    
-                    gcc = KnowledgeGraph.get_object_from_lookup(gcc)
-                resolved_gccs.append(gcc)
+        Uses xyzrender if available (preferred), falls back to plotly.
+        For AM, pores are shown when using xyzrender backend.
+        
+        Args:
+            show_pores: Whether to show pores/cavities (default: True, only works with xyzrender)
+            backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
+            **kwargs: Additional arguments passed to the visualization function
             
-            for gcc in resolved_gccs:
-                gcc: GBUCoordinateCenter
-                rows.append([gbu.gbu_type, gcc.instance_iri, str(gcc.rdfs_comment), gcc.coordinates.x, gcc.coordinates.y, gcc.coordinates.z])
-                # Handle case where hasGBUConnectingPoint contains IRIs (strings) instead of objects
-                cps = list(gcc.hasGBUConnectingPoint)
-                resolved_cps = []
-                for cp in cps:
-                    if isinstance(cp, str):
-                        
-                        cp = KnowledgeGraph.get_object_from_lookup(cp)
-                    resolved_cps.append(cp)
-                for cp in resolved_cps:
-                    cp: GBUConnectingPoint
-                    rows.append(['ConnectingPoint', cp.instance_iri, str(cp.rdfs_comment), cp.coordinates.x, cp.coordinates.y, cp.coordinates.z])
-        df = pd.DataFrame(rows, columns=['Label', 'IRI', 'Position', 'X', 'Y', 'Z'])
-
-        fig = px.scatter_3d(df, x='X', y='Y', z='Z', color='Label', hover_data=['IRI', 'Position'])
-        fig.update_traces(marker=dict(size=2))
-
-        return fig
+        Returns:
+            Visualization object (xyzrender.Scene or plotly.Figure)
+        """
+        from twa_mops.utils.visualization import visualize_am
+        return visualize_am(self, show_pores=show_pores, backend=backend, **kwargs)
 
     @staticmethod
     def process_geometry_json(am_json, gbu_type_1_label, gbu_type_2_label):
@@ -1777,26 +1751,30 @@ class ChemicalBuildingUnit(BaseClass):
                 length_center_to_binding = length_center_to_binding_atoms + min([cap.PERIODIC_TABLE.GetRcovalent(a.label) for a in binding_atoms])
         return rotated_binding_vector, most_possible_binding_site_angle, length_center_to_binding
 
-    def visualise(self, sparql_client = None, data_dir=None):
-        rows = []
+    def visualise(self, sparql_client = None, data_dir=None, show_pores: bool = True, backend: str = 'auto', **kwargs):
+        """Visualize the ChemicalBuildingUnit.
+        
+        Uses xyzrender if available (preferred), falls back to plotly.
+        
+        Args:
+            sparql_client: SPARQL client for loading geometry if needed
+            data_dir: Data directory for geometry files
+            show_pores: Whether to show pores/cavities (default: True, only works with xyzrender)
+            backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
+            **kwargs: Additional arguments passed to the visualization function
+            
+        Returns:
+            Visualization object (xyzrender.Scene or plotly.Figure)
+        """
+        from twa_mops.utils.visualization import visualize_cbu
+        
+        # Load geometry if needed
         if list(self.hasGeometry)[0].hasPoints is None:
             if sparql_client is None:
                 raise ValueError('SPARQL client is required to visualise/load the geometry')
             self.load_geometry_from_fileserver(sparql_client, data_dir=data_dir)
-        # atoms
-        for pt in list(self.hasGeometry)[0].hasPoints:
-            rows.append([pt.label, pt.x, pt.y, pt.z])
-        # binding sites
-        for pt in list(self.hasBindingSite):
-            rows.append(['BindingSite', pt.binding_coordinates.x, pt.binding_coordinates.y, pt.binding_coordinates.z])
-        # assembly center
-        rows.append(['AssemblyCenter', self.assembly_center.x, self.assembly_center.y, self.assembly_center.z])
-        df = pd.DataFrame(rows, columns=['Atom', 'X', 'Y', 'Z',])
-        fig = px.scatter_3d(df, x='X', y='Y', z='Z', color='Atom', title=f'CBU: {list(self.hasCBUFormula)[0]}')
-        fig.update_traces(marker=dict(size=2))
-        fig.update_layout(autosize=False, width=1200, height=400)
-        fig.show()
-        return fig
+        
+        return visualize_cbu(self, show_pores=show_pores, backend=backend, **kwargs)
 
 
 class CBUAssemblyTransformation(BaseClass):
@@ -2103,20 +2081,31 @@ class MetalOrganicPolyhedron(CoordinationCage):
             hasCBUAssemblyTransformation=cbu_assembly_transformation_lst
         )
 
-    def visualise(self, sparql_client = None):
-        rows = []
+    def visualise(self, sparql_client = None, data_dir=None, show_pores: bool = True, backend: str = 'auto', **kwargs):
+        """Visualize the MetalOrganicPolyhedron.
+        
+        Uses xyzrender if available (preferred), falls back to plotly.
+        For MOP, pores/cavities are shown by default when using xyzrender.
+        
+        Args:
+            sparql_client: SPARQL client for loading geometry if needed
+            data_dir: Data directory for geometry files
+            show_pores: Whether to show pores/cavities (default: True, only works with xyzrender)
+            backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
+            **kwargs: Additional arguments passed to the visualization function
+            
+        Returns:
+            Visualization object (xyzrender.Scene or plotly.Figure)
+        """
+        from twa_mops.utils.visualization import visualize_mop
+        
+        # Load geometry if needed
         if list(self.hasGeometry)[0].hasPoints is None:
             if sparql_client is None:
                 raise ValueError('SPARQL client is required to visualise/load the geometry')
-            list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client, data_dir=None)
-        for pt in list(self.hasGeometry)[0].hasPoints:
-            rows.append([pt.label, pt.x, pt.y, pt.z])
-        df = pd.DataFrame(rows, columns=['Atom', 'X', 'Y', 'Z',])
-        fig = px.scatter_3d(df, x='X', y='Y', z='Z', color='Atom', title=f'MOP: {list(self.hasMOPFormula)[0]}\n AM: {list(self.hasAssemblyModel)[0].instance_iri}')
-        fig.update_traces(marker=dict(size=2))
-        fig.update_layout(autosize=False, width=1200, height=400)
-        fig.show()
-        return fig
+            list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client, data_dir=data_dir)
+        
+        return visualize_mop(self, show_pores=show_pores, backend=backend, **kwargs)
 
 
     def has_cbu_overlaps(self, threshold_factor: float = 1.2) -> bool:

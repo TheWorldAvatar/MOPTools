@@ -1,0 +1,1052 @@
+"""Visualization utilities for MOPTools.
+
+This module provides visualization functions for Metal-Organic Polyhedrons,
+Chemical Building Units, and Assembly Models using either:
+1. xyzrender library (preferred) - for interactive 3D visualization
+2. Plotly (fallback) - for basic 3D scatter plots
+
+The xyzrender backend provides better performance and more features for
+visualizing molecular structures and pores.
+"""
+
+from typing import Optional, List, Dict, Any, Union
+import os
+import warnings
+
+# Try to import xyzrender
+try:
+    import xyzrender
+    XYZRENDER_AVAILABLE = True
+except ImportError:
+    XYZRENDER_AVAILABLE = False
+
+# Try to import plotly
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
+# Try to import pandas
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+
+
+class VisualizationError(Exception):
+    """Base exception for visualization errors."""
+    pass
+
+
+class BackendNotAvailableError(VisualizationError):
+    """Raised when neither xyzrender nor plotly is available."""
+    pass
+
+
+class InvalidGeometryError(VisualizationError):
+    """Raised when geometry data is invalid or missing."""
+    pass
+
+
+def _check_backend_availability():
+    """Check if at least one visualization backend is available."""
+    if not XYZRENDER_AVAILABLE and not PLOTLY_AVAILABLE:
+        raise BackendNotAvailableError(
+            "Neither xyzrender nor plotly is available for visualization. "
+            "Please install at least one: "
+            "pip install xyzrender or pip install plotly"
+        )
+
+
+def _extract_atoms_data(obj) -> List[Dict[str, Any]]:
+    """Extract atom data from a MOP/CBU/AM object for visualization.
+    
+    Args:
+        obj: Object with hasGeometry property (ChemicalBuildingUnit or MetalOrganicPolyhedron)
+    
+    Returns:
+        List of dictionaries with atom data: label, x, y, z
+    
+    Raises:
+        InvalidGeometryError: If geometry data is missing or invalid
+    """
+    try:
+        geometry = list(obj.hasGeometry)[0]
+    except (IndexError, AttributeError):
+        raise InvalidGeometryError(f"Object {obj.instance_iri if hasattr(obj, 'instance_iri') else obj} has no geometry")
+    
+    if geometry.hasPoints is None:
+        raise InvalidGeometryError(f"Geometry has no points loaded. Call load_geometry_from_fileserver() first.")
+    
+    atoms = []
+    for pt in list(geometry.hasPoints):
+        atoms.append({
+            'label': pt.label,
+            'x': pt.x,
+            'y': pt.y,
+            'z': pt.z
+        })
+    
+    return atoms
+
+
+def _extract_binding_sites_data(obj) -> List[Dict[str, Any]]:
+    """Extract binding site data from a MOP/CBU for visualization.
+    
+    Args:
+        obj: Object with hasBindingSite property
+    
+    Returns:
+        List of dictionaries with binding site data: label, x, y, z
+    """
+    binding_sites = []
+    
+    try:
+        for bs in list(obj.hasBindingSite):
+            binding_sites.append({
+                'label': 'BindingSite',
+                'x': bs.binding_coordinates.x,
+                'y': bs.binding_coordinates.y,
+                'z': bs.binding_coordinates.z
+            })
+    except AttributeError:
+        pass
+    
+    return binding_sites
+
+
+def _extract_assembly_center(obj) -> Optional[Dict[str, Any]]:
+    """Extract assembly center from a MOP/CBU for visualization.
+    
+    Args:
+        obj: Object with assembly_center property
+    
+    Returns:
+        Dictionary with assembly center data or None
+    """
+    try:
+        if hasattr(obj, 'assembly_center') and obj.assembly_center:
+            return {
+                'label': 'AssemblyCenter',
+                'x': obj.assembly_center.x,
+                'y': obj.assembly_center.y,
+                'z': obj.assembly_center.z
+            }
+    except AttributeError:
+        pass
+    return None
+
+
+def _extract_gbu_data(obj) -> List[Dict[str, Any]]:
+    """Extract GBU coordinate center and connecting point data from an AssemblyModel.
+    
+    Args:
+        obj: AssemblyModel object
+    
+    Returns:
+        List of dictionaries with GBU data: label, iri, comment, x, y, z
+    """
+    rows = []
+    
+    try:
+        gbus = list(obj.hasGenericBuildingUnit)
+        for gbu in gbus:
+            # Handle case where gbu is a string IRI
+            if isinstance(gbu, str):
+                from twa.data_model.base_ontology import KnowledgeGraph
+                gbu = KnowledgeGraph.get_object_from_lookup(gbu)
+            
+            # Handle case where hasGBUCoordinateCenter contains IRIs
+            gccs = list(gbu.hasGBUCoordinateCenter)
+            for gcc in gccs:
+                if isinstance(gcc, str):
+                    from twa.data_model.base_ontology import KnowledgeGraph
+                    gcc = KnowledgeGraph.get_object_from_lookup(gcc)
+                
+                rows.append({
+                    'label': gbu.gbu_type if hasattr(gbu, 'gbu_type') else 'GBU',
+                    'iri': gcc.instance_iri,
+                    'comment': str(gcc.rdfs_comment) if hasattr(gcc, 'rdfs_comment') else '',
+                    'x': gcc.coordinates.x,
+                    'y': gcc.coordinates.y,
+                    'z': gcc.coordinates.z
+                })
+                
+                # Handle connecting points
+                cps = list(gcc.hasGBUConnectingPoint)
+                for cp in cps:
+                    if isinstance(cp, str):
+                        from twa.data_model.base_ontology import KnowledgeGraph
+                        cp = KnowledgeGraph.get_object_from_lookup(cp)
+                    
+                    rows.append({
+                        'label': 'ConnectingPoint',
+                        'iri': cp.instance_iri,
+                        'comment': str(cp.rdfs_comment) if hasattr(cp, 'rdfs_comment') else '',
+                        'x': cp.coordinates.x,
+                        'y': cp.coordinates.y,
+                        'z': cp.coordinates.z
+                    })
+    except AttributeError:
+        pass
+    
+    return rows
+
+
+def _extract_pore_data(obj) -> List[Dict[str, Any]]:
+    """Extract pore/cavity data from a MOP or AM for visualization.
+    
+    Args:
+        obj: MetalOrganicPolyhedron or AssemblyModel object
+    
+    Returns:
+        List of dictionaries with pore data: label, x, y, z, radius
+    """
+    pores = []
+    
+    try:
+        # Check for hasCavity (MOP)
+        if hasattr(obj, 'hasCavity') and obj.hasCavity:
+            for cavity in list(obj.hasCavity):
+                # Try to get center coordinates from cavity
+                # This is a placeholder - actual pore center calculation may vary
+                if hasattr(cavity, 'hasCenter'):
+                    center = list(cavity.hasCenter)[0]
+                    pores.append({
+                        'label': 'Cavity',
+                        'x': center.x if hasattr(center, 'x') else 0,
+                        'y': center.y if hasattr(center, 'y') else 0,
+                        'z': center.z if hasattr(center, 'z') else 0,
+                        'radius': float(list(cavity.hasLargestInnerSphereDiameter)[0].hasValue.hasNumericalValue) / 2 if hasattr(cavity, 'hasLargestInnerSphereDiameter') else 1.0
+                    })
+        
+        # Check for hasPoreRing (both MOP and AM)
+        if hasattr(obj, 'hasPoreRing') and obj.hasPoreRing:
+            for pore_ring in list(obj.hasPoreRing) or []:
+                # Extract pore ring center and radius
+                if hasattr(pore_ring, 'hasPoreRingCenter'):
+                    center = list(pore_ring.hasPoreRingCenter)[0]
+                    # Try to get diameter if available
+                    radius = 1.0
+                    if hasattr(pore_ring, 'hasPoreDiameter'):
+                        try:
+                            diameter = list(pore_ring.hasPoreDiameter)[0]
+                            if hasattr(diameter, 'hasValue'):
+                                radius = float(list(diameter.hasValue)[0].hasNumericalValue) / 2
+                        except (AttributeError, IndexError):
+                            pass
+                    pores.append({
+                        'label': 'PoreRing',
+                        'x': center.x if hasattr(center, 'x') else 0,
+                        'y': center.y if hasattr(center, 'y') else 0,
+                        'z': center.z if hasattr(center, 'z') else 0,
+                        'radius': radius
+                    })
+    except (AttributeError, IndexError):
+        pass
+    
+    return pores
+
+
+# ============================================================================
+# Main Visualization Functions
+# ============================================================================
+
+
+def visualize_mop_xyzrender(
+    mop,
+    show_atoms: bool = True,
+    show_binding_sites: bool = True,
+    show_assembly_center: bool = True,
+    show_pores: bool = True,
+    color_scheme: str = 'default',
+    atom_radius: float = 0.2,
+    binding_site_radius: float = 0.3,
+    pore_radius_scale: float = 1.0,
+    **kwargs
+) -> Any:
+    """Visualize a MetalOrganicPolyhedron using xyzrender library.
+    
+    This function creates an interactive 3D visualization of a MOP with:
+    - Atoms (colored by element)
+    - Binding sites
+    - Assembly center
+    - Pores/cavities (as spheres)
+    
+    Args:
+        mop: MetalOrganicPolyhedron object to visualize
+        show_atoms: Whether to show atoms (default: True)
+        show_binding_sites: Whether to show binding sites (default: True)
+        show_assembly_center: Whether to show assembly center (default: True)
+        show_pores: Whether to show pores/cavities (default: True)
+        color_scheme: Color scheme for atoms (default: 'default')
+        atom_radius: Radius of atom spheres (default: 0.2)
+        binding_site_radius: Radius of binding site spheres (default: 0.3)
+        pore_radius_scale: Scale factor for pore/cavity spheres (default: 1.0)
+        **kwargs: Additional arguments passed to xyzrender
+    
+    Returns:
+        xyzrender Scene object (can be displayed with .show())
+    
+    Raises:
+        BackendNotAvailableError: If xyzrender is not installed
+        InvalidGeometryError: If geometry data is missing
+    """
+    if not XYZRENDER_AVAILABLE:
+        raise BackendNotAvailableError(
+            "xyzrender is not available. Please install it: pip install xyzrender"
+        )
+    
+    import xyzrender
+    
+    scene = xyzrender.Scene()
+    
+    # Extract atom data
+    if show_atoms:
+        atoms = _extract_atoms_data(mop)
+        if atoms:
+            xyz_data = []
+            elements = []
+            for atom in atoms:
+                xyz_data.append([atom['x'], atom['y'], atom['z']])
+                elements.append(atom['label'])
+            
+            if xyz_data:
+                scene.add_atoms(
+                    positions=xyz_data,
+                    elements=elements,
+                    radius=atom_radius,
+                    color_scheme=color_scheme
+                )
+    
+    # Extract binding sites
+    if show_binding_sites:
+        binding_sites = _extract_binding_sites_data(mop)
+        if binding_sites:
+            bs_positions = [[bs['x'], bs['y'], bs['z']] for bs in binding_sites]
+            scene.add_atoms(
+                positions=bs_positions,
+                elements=['X'] * len(binding_sites),  # Use placeholder element
+                radius=binding_site_radius,
+                color='orange'
+            )
+    
+    # Extract assembly center
+    if show_assembly_center:
+        center = _extract_assembly_center(mop)
+        if center:
+            scene.add_atoms(
+                positions=[[center['x'], center['y'], center['z']]],
+                elements=['X'],
+                radius=binding_site_radius * 1.5,
+                color='red'
+            )
+    
+    # Extract and show pores
+    if show_pores:
+        pores = _extract_pore_data(mop)
+        if pores:
+            for pore in pores:
+                scene.add_atoms(
+                    positions=[[pore['x'], pore['y'], pore['z']]],
+                    elements=['X'],
+                    radius=pore['radius'] * pore_radius_scale,
+                    color='cyan',
+                    opacity=0.5
+                )
+    
+    return scene
+
+
+def visualize_mop_plotly(
+    mop,
+    show_atoms: bool = True,
+    show_binding_sites: bool = True,
+    show_assembly_center: bool = True,
+    show_pores: bool = False,
+    width: int = 1200,
+    height: int = 800,
+    **kwargs
+) -> Any:
+    """Visualize a MetalOrganicPolyhedron using Plotly (fallback).
+    
+    This function creates a 3D scatter plot of a MOP with:
+    - Atoms (colored by element)
+    - Binding sites
+    - Assembly center
+    
+    Note: Pores are not shown in Plotly backend due to limitations.
+    
+    Args:
+        mop: MetalOrganicPolyhedron object to visualize
+        show_atoms: Whether to show atoms (default: True)
+        show_binding_sites: Whether to show binding sites (default: True)
+        show_assembly_center: Whether to show assembly center (default: True)
+        show_pores: Whether to show pores (not implemented in Plotly, default: False)
+        width: Figure width in pixels (default: 1200)
+        height: Figure height in pixels (default: 800)
+        **kwargs: Additional arguments passed to px.scatter_3d
+    
+    Returns:
+        plotly.graph_objects.Figure object (can be displayed with .show())
+    
+    Raises:
+        BackendNotAvailableError: If plotly is not installed
+        InvalidGeometryError: If geometry data is missing
+    """
+    if not PLOTLY_AVAILABLE or not PANDAS_AVAILABLE:
+        raise BackendNotAvailableError(
+            "plotly or pandas is not available. Please install: pip install plotly pandas"
+        )
+    
+    rows = []
+    
+    # Extract atom data
+    if show_atoms:
+        atoms = _extract_atoms_data(mop)
+        for atom in atoms:
+            rows.append({
+                'Label': atom['label'],
+                'IRI': '',
+                'Type': 'Atom',
+                'X': atom['x'],
+                'Y': atom['y'],
+                'Z': atom['z']
+            })
+    
+    # Extract binding sites
+    if show_binding_sites:
+        binding_sites = _extract_binding_sites_data(mop)
+        for bs in binding_sites:
+            rows.append({
+                'Label': bs['label'],
+                'IRI': '',
+                'Type': 'BindingSite',
+                'X': bs['x'],
+                'Y': bs['y'],
+                'Z': bs['z']
+            })
+    
+    # Extract assembly center
+    if show_assembly_center:
+        center = _extract_assembly_center(mop)
+        if center:
+            rows.append({
+                'Label': center['label'],
+                'IRI': '',
+                'Type': 'AssemblyCenter',
+                'X': center['x'],
+                'Y': center['y'],
+                'Z': center['z']
+            })
+    
+    if not rows:
+        raise InvalidGeometryError("No data to visualize")
+    
+    df = pd.DataFrame(rows)
+    
+    # Create title
+    try:
+        title = f'MOP: {list(mop.hasMOPFormula)[0]}\n'
+        title += f'AM: {list(mop.hasAssemblyModel)[0].instance_iri}'
+    except (AttributeError, IndexError):
+        title = 'MOP Visualization'
+    
+    fig = px.scatter_3d(
+        df,
+        x='X',
+        y='Y',
+        z='Z',
+        color='Type',
+        hover_data=['Label', 'IRI'],
+        title=title,
+        **kwargs
+    )
+    
+    fig.update_traces(marker=dict(size=2))
+    fig.update_layout(
+        autosize=False,
+        width=width,
+        height=height,
+        scene=dict(
+            xaxis_title='X',
+            yaxis_title='Y',
+            zaxis_title='Z'
+        )
+    )
+    
+    return fig
+
+
+def visualize_cbu_xyzrender(
+    cbu,
+    show_atoms: bool = True,
+    show_binding_sites: bool = True,
+    show_assembly_center: bool = True,
+    color_scheme: str = 'default',
+    atom_radius: float = 0.2,
+    binding_site_radius: float = 0.3,
+    **kwargs
+) -> Any:
+    """Visualize a ChemicalBuildingUnit using xyzrender library.
+    
+    Args:
+        cbu: ChemicalBuildingUnit object to visualize
+        show_atoms: Whether to show atoms (default: True)
+        show_binding_sites: Whether to show binding sites (default: True)
+        show_assembly_center: Whether to show assembly center (default: True)
+        color_scheme: Color scheme for atoms (default: 'default')
+        atom_radius: Radius of atom spheres (default: 0.2)
+        binding_site_radius: Radius of binding site spheres (default: 0.3)
+        **kwargs: Additional arguments passed to xyzrender
+    
+    Returns:
+        xyzrender Scene object
+    
+    Raises:
+        BackendNotAvailableError: If xyzrender is not installed
+        InvalidGeometryError: If geometry data is missing
+    """
+    if not XYZRENDER_AVAILABLE:
+        raise BackendNotAvailableError(
+            "xyzrender is not available. Please install it: pip install xyzrender"
+        )
+    
+    import xyzrender
+    
+    scene = xyzrender.Scene()
+    
+    # Extract atom data
+    if show_atoms:
+        atoms = _extract_atoms_data(cbu)
+        if atoms:
+            xyz_data = []
+            elements = []
+            for atom in atoms:
+                xyz_data.append([atom['x'], atom['y'], atom['z']])
+                elements.append(atom['label'])
+            
+            if xyz_data:
+                scene.add_atoms(
+                    positions=xyz_data,
+                    elements=elements,
+                    radius=atom_radius,
+                    color_scheme=color_scheme
+                )
+    
+    # Extract binding sites
+    if show_binding_sites:
+        binding_sites = _extract_binding_sites_data(cbu)
+        if binding_sites:
+            bs_positions = [[bs['x'], bs['y'], bs['z']] for bs in binding_sites]
+            scene.add_atoms(
+                positions=bs_positions,
+                elements=['X'] * len(binding_sites),
+                radius=binding_site_radius,
+                color='orange'
+            )
+    
+    # Extract assembly center
+    if show_assembly_center:
+        center = _extract_assembly_center(cbu)
+        if center:
+            scene.add_atoms(
+                positions=[[center['x'], center['y'], center['z']]],
+                elements=['X'],
+                radius=binding_site_radius * 1.5,
+                color='red'
+            )
+    
+    # Set title
+    try:
+        scene.title = f'CBU: {list(cbu.hasCBUFormula)[0]}'
+    except (AttributeError, IndexError):
+        scene.title = 'CBU Visualization'
+    
+    return scene
+
+
+def visualize_cbu_plotly(
+    cbu,
+    show_atoms: bool = True,
+    show_binding_sites: bool = True,
+    show_assembly_center: bool = True,
+    width: int = 1200,
+    height: int = 400,
+    **kwargs
+) -> Any:
+    """Visualize a ChemicalBuildingUnit using Plotly (fallback).
+    
+    Args:
+        cbu: ChemicalBuildingUnit object to visualize
+        show_atoms: Whether to show atoms (default: True)
+        show_binding_sites: Whether to show binding sites (default: True)
+        show_assembly_center: Whether to show assembly center (default: True)
+        width: Figure width in pixels (default: 1200)
+        height: Figure height in pixels (default: 400)
+        **kwargs: Additional arguments passed to px.scatter_3d
+    
+    Returns:
+        plotly.graph_objects.Figure object
+    """
+    if not PLOTLY_AVAILABLE or not PANDAS_AVAILABLE:
+        raise BackendNotAvailableError(
+            "plotly or pandas is not available. Please install: pip install plotly pandas"
+        )
+    
+    rows = []
+    
+    # Extract atom data
+    if show_atoms:
+        atoms = _extract_atoms_data(cbu)
+        for atom in atoms:
+            rows.append({
+                'Atom': atom['label'],
+                'Type': 'Atom',
+                'X': atom['x'],
+                'Y': atom['y'],
+                'Z': atom['z']
+            })
+    
+    # Extract binding sites
+    if show_binding_sites:
+        binding_sites = _extract_binding_sites_data(cbu)
+        for bs in binding_sites:
+            rows.append({
+                'Atom': bs['label'],
+                'Type': 'BindingSite',
+                'X': bs['x'],
+                'Y': bs['y'],
+                'Z': bs['z']
+            })
+    
+    # Extract assembly center
+    if show_assembly_center:
+        center = _extract_assembly_center(cbu)
+        if center:
+            rows.append({
+                'Atom': center['label'],
+                'Type': 'AssemblyCenter',
+                'X': center['x'],
+                'Y': center['y'],
+                'Z': center['z']
+            })
+    
+    if not rows:
+        raise InvalidGeometryError("No data to visualize")
+    
+    df = pd.DataFrame(rows)
+    
+    # Create title
+    try:
+        title = f'CBU: {list(cbu.hasCBUFormula)[0]}'
+    except (AttributeError, IndexError):
+        title = 'CBU Visualization'
+    
+    fig = px.scatter_3d(
+        df,
+        x='X',
+        y='Y',
+        z='Z',
+        color='Type',
+        hover_data=['Atom'],
+        title=title,
+        **kwargs
+    )
+    
+    fig.update_traces(marker=dict(size=2))
+    fig.update_layout(
+        autosize=False,
+        width=width,
+        height=height,
+        scene=dict(
+            xaxis_title='X',
+            yaxis_title='Y',
+            zaxis_title='Z'
+        )
+    )
+    
+    return fig
+
+
+def visualize_am_xyzrender(
+    am,
+    show_pores: bool = True,
+    color_scheme: str = 'default',
+    gbu_radius: float = 0.3,
+    cp_radius: float = 0.2,
+    pore_radius_scale: float = 1.0,
+    **kwargs
+) -> Any:
+    """Visualize an AssemblyModel using xyzrender library.
+    
+    Shows GBU coordinate centers, connecting points, and optionally pores.
+    
+    Args:
+        am: AssemblyModel object to visualize
+        show_pores: Whether to show pores/pore rings (default: True)
+        color_scheme: Color scheme (default: 'default')
+        gbu_radius: Radius of GBU center spheres (default: 0.3)
+        cp_radius: Radius of connecting point spheres (default: 0.2)
+        pore_radius_scale: Scale factor for pore radii (default: 1.0)
+        **kwargs: Additional arguments passed to xyzrender
+    
+    Returns:
+        xyzrender Scene object
+    """
+    if not XYZRENDER_AVAILABLE:
+        raise BackendNotAvailableError(
+            "xyzrender is not available. Please install it: pip install xyzrender"
+        )
+    
+    import xyzrender
+    
+    scene = xyzrender.Scene()
+    
+    # Extract GBU data
+    gbu_data = _extract_gbu_data(am)
+    
+    if gbu_data:
+        for item in gbu_data:
+            if 'ConnectingPoint' in item['label']:
+                # Connecting points
+                scene.add_atoms(
+                    positions=[[item['x'], item['y'], item['z']]],
+                    elements=['X'],
+                    radius=cp_radius,
+                    color='green'
+                )
+            else:
+                # GBU centers
+                scene.add_atoms(
+                    positions=[[item['x'], item['y'], item['z']]],
+                    elements=['X'],
+                    radius=gbu_radius,
+                    color='blue'
+                )
+    
+    # Extract and show pores
+    if show_pores:
+        pores = _extract_pore_data(am)
+        if pores:
+            for pore in pores:
+                scene.add_atoms(
+                    positions=[[pore['x'], pore['y'], pore['z']]],
+                    elements=['X'],
+                    radius=pore['radius'] * pore_radius_scale,
+                    color='cyan' if pore['label'] == 'Cavity' else 'magenta',
+                    opacity=0.5
+                )
+    
+    # Set title
+    try:
+        scene.title = f'AM: {am.instance_iri}'
+    except AttributeError:
+        scene.title = 'AssemblyModel Visualization'
+    
+    return scene
+
+
+def visualize_am_plotly(
+    am,
+    width: int = 1200,
+    height: int = 800,
+    **kwargs
+) -> Any:
+    """Visualize an AssemblyModel using Plotly (fallback).
+    
+    Args:
+        am: AssemblyModel object to visualize
+        width: Figure width in pixels (default: 1200)
+        height: Figure height in pixels (default: 800)
+        **kwargs: Additional arguments passed to px.scatter_3d
+    
+    Returns:
+        plotly.graph_objects.Figure object
+    """
+    if not PLOTLY_AVAILABLE or not PANDAS_AVAILABLE:
+        raise BackendNotAvailableError(
+            "plotly or pandas is not available. Please install: pip install plotly pandas"
+        )
+    
+    # Extract GBU data
+    gbu_data = _extract_gbu_data(am)
+    
+    if not gbu_data:
+        raise InvalidGeometryError("No GBU data to visualize")
+    
+    rows = []
+    for item in gbu_data:
+        rows.append({
+            'Label': item['label'],
+            'IRI': item['iri'],
+            'Comment': item['comment'],
+            'Type': item['label'],
+            'X': item['x'],
+            'Y': item['y'],
+            'Z': item['z']
+        })
+    
+    df = pd.DataFrame(rows)
+    
+    # Create title
+    try:
+        title = f'AM: {am.instance_iri}'
+    except AttributeError:
+        title = 'AssemblyModel Visualization'
+    
+    fig = px.scatter_3d(
+        df,
+        x='X',
+        y='Y',
+        z='Z',
+        color='Type',
+        hover_data=['Label', 'IRI', 'Comment'],
+        title=title,
+        **kwargs
+    )
+    
+    fig.update_traces(marker=dict(size=5))
+    fig.update_layout(
+        autosize=False,
+        width=width,
+        height=height,
+        scene=dict(
+            xaxis_title='X',
+            yaxis_title='Y',
+            zaxis_title='Z'
+        )
+    )
+    
+    return fig
+
+
+# ============================================================================
+# Unified Visualization Functions (Auto-select backend)
+# ============================================================================
+
+
+def visualize_mop(
+    mop,
+    show_pores: bool = True,
+    backend: str = 'auto',
+    **kwargs
+) -> Any:
+    """Visualize a MetalOrganicPolyhedron.
+    
+    Automatically selects the best available backend (xyzrender preferred, 
+    plotly as fallback). Can also explicitly specify the backend.
+    
+    Args:
+        mop: MetalOrganicPolyhedron object to visualize
+        show_pores: Whether to show pores/cavities (default: True)
+                    Note: Only works with xyzrender backend
+        backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
+        **kwargs: Additional arguments passed to the specific backend function
+    
+    Returns:
+        Visualization object (xyzrender.Scene or plotly.Figure)
+    
+    Raises:
+        BackendNotAvailableError: If no backend is available
+    """
+    _check_backend_availability()
+    
+    if backend == 'auto':
+        # Prefer xyzrender if available
+        if XYZRENDER_AVAILABLE:
+            return visualize_mop_xyzrender(mop, show_pores=show_pores, **kwargs)
+        else:
+            return visualize_mop_plotly(mop, show_pores=False, **kwargs)
+    elif backend == 'xyzrender':
+        if not XYZRENDER_AVAILABLE:
+            raise BackendNotAvailableError(
+                "xyzrender is not available. Please install it: pip install xyzrender"
+            )
+        return visualize_mop_xyzrender(mop, show_pores=show_pores, **kwargs)
+    elif backend == 'plotly':
+        if not PLOTLY_AVAILABLE:
+            raise BackendNotAvailableError(
+                "plotly is not available. Please install it: pip install plotly"
+            )
+        return visualize_mop_plotly(mop, show_pores=False, **kwargs)
+    else:
+        raise ValueError(f"Unknown backend: {backend}. Use 'auto', 'xyzrender', or 'plotly'")
+
+
+def visualize_cbu(
+    cbu,
+    backend: str = 'auto',
+    **kwargs
+) -> Any:
+    """Visualize a ChemicalBuildingUnit.
+    
+    Automatically selects the best available backend.
+    
+    Args:
+        cbu: ChemicalBuildingUnit object to visualize
+        backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
+        **kwargs: Additional arguments passed to the specific backend function
+    
+    Returns:
+        Visualization object (xyzrender.Scene or plotly.Figure)
+    """
+    _check_backend_availability()
+    
+    if backend == 'auto':
+        if XYZRENDER_AVAILABLE:
+            return visualize_cbu_xyzrender(cbu, **kwargs)
+        else:
+            return visualize_cbu_plotly(cbu, **kwargs)
+    elif backend == 'xyzrender':
+        if not XYZRENDER_AVAILABLE:
+            raise BackendNotAvailableError(
+                "xyzrender is not available. Please install it: pip install xyzrender"
+            )
+        return visualize_cbu_xyzrender(cbu, **kwargs)
+    elif backend == 'plotly':
+        if not PLOTLY_AVAILABLE:
+            raise BackendNotAvailableError(
+                "plotly is not available. Please install it: pip install plotly"
+            )
+        return visualize_cbu_plotly(cbu, **kwargs)
+    else:
+        raise ValueError(f"Unknown backend: {backend}. Use 'auto', 'xyzrender', or 'plotly'")
+
+
+def visualize_am(
+    am,
+    show_pores: bool = True,
+    backend: str = 'auto',
+    **kwargs
+) -> Any:
+    """Visualize an AssemblyModel.
+    
+    Automatically selects the best available backend.
+    
+    Args:
+        am: AssemblyModel object to visualize
+        show_pores: Whether to show pores/pore rings (default: True, only works with xyzrender)
+        backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
+        **kwargs: Additional arguments passed to the specific backend function
+    
+    Returns:
+        Visualization object (xyzrender.Scene or plotly.Figure)
+    """
+    _check_backend_availability()
+    
+    if backend == 'auto':
+        if XYZRENDER_AVAILABLE:
+            return visualize_am_xyzrender(am, show_pores=show_pores, **kwargs)
+        else:
+            return visualize_am_plotly(am, **kwargs)
+    elif backend == 'xyzrender':
+        if not XYZRENDER_AVAILABLE:
+            raise BackendNotAvailableError(
+                "xyzrender is not available. Please install it: pip install xyzrender"
+            )
+        return visualize_am_xyzrender(am, show_pores=show_pores, **kwargs)
+    elif backend == 'plotly':
+        if not PLOTLY_AVAILABLE:
+            raise BackendNotAvailableError(
+                "plotly is not available. Please install it: pip install plotly"
+            )
+        return visualize_am_plotly(am, **kwargs)
+    else:
+        raise ValueError(f"Unknown backend: {backend}. Use 'auto', 'xyzrender', or 'plotly'")
+
+
+# ============================================================================
+# Convenience Functions for Backward Compatibility
+# ============================================================================
+
+
+def visualize_with_xyzrender(obj, **kwargs) -> Any:
+    """Visualize any object using xyzrender (preferred backend).
+    
+    This function automatically detects the object type and uses the
+    appropriate xyzrender visualization function.
+    
+    Args:
+        obj: Object to visualize (MOP, CBU, or AM)
+        **kwargs: Additional arguments passed to the specific visualization function
+    
+    Returns:
+        xyzrender Scene object
+    
+    Raises:
+        BackendNotAvailableError: If xyzrender is not available
+        ValueError: If object type is not recognized
+    """
+    from twa_mops.core.ontomops import MetalOrganicPolyhedron, ChemicalBuildingUnit, AssemblyModel
+    
+    if isinstance(obj, MetalOrganicPolyhedron):
+        return visualize_mop_xyzrender(obj, **kwargs)
+    elif isinstance(obj, ChemicalBuildingUnit):
+        return visualize_cbu_xyzrender(obj, **kwargs)
+    elif isinstance(obj, AssemblyModel):
+        return visualize_am_xyzrender(obj, **kwargs)
+    else:
+        raise ValueError(f"Unsupported object type: {type(obj)}")
+
+
+def visualize_with_plotly(obj, **kwargs) -> Any:
+    """Visualize any object using Plotly (fallback backend).
+    
+    This function automatically detects the object type and uses the
+    appropriate Plotly visualization function.
+    
+    Args:
+        obj: Object to visualize (MOP, CBU, or AM)
+        **kwargs: Additional arguments passed to the specific visualization function
+    
+    Returns:
+        plotly Figure object
+    
+    Raises:
+        BackendNotAvailableError: If plotly is not available
+        ValueError: If object type is not recognized
+    """
+    from twa_mops.core.ontomops import MetalOrganicPolyhedron, ChemicalBuildingUnit, AssemblyModel
+    
+    if isinstance(obj, MetalOrganicPolyhedron):
+        return visualize_mop_plotly(obj, **kwargs)
+    elif isinstance(obj, ChemicalBuildingUnit):
+        return visualize_cbu_plotly(obj, **kwargs)
+    elif isinstance(obj, AssemblyModel):
+        return visualize_am_plotly(obj, **kwargs)
+    else:
+        raise ValueError(f"Unsupported object type: {type(obj)}")
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    # Exceptions
+    'VisualizationError',
+    'BackendNotAvailableError',
+    'InvalidGeometryError',
+    
+    # Main visualization functions
+    'visualize_mop',
+    'visualize_cbu',
+    'visualize_am',
+    
+    # Backend-specific functions
+    'visualize_mop_xyzrender',
+    'visualize_mop_plotly',
+    'visualize_cbu_xyzrender',
+    'visualize_cbu_plotly',
+    'visualize_am_xyzrender',
+    'visualize_am_plotly',
+    
+    # Convenience functions
+    'visualize_with_xyzrender',
+    'visualize_with_plotly',
+]
