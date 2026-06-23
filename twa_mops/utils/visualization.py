@@ -13,12 +13,14 @@ from typing import Optional, List, Dict, Any, Union
 import os
 import warnings
 
-# Try to import xyzrender
+# Try to import xyzrender and networkx
 try:
     import xyzrender
+    import networkx as nx
     XYZRENDER_AVAILABLE = True
 except ImportError:
     XYZRENDER_AVAILABLE = False
+    nx = None
 
 # Try to import plotly
 try:
@@ -277,6 +279,8 @@ def visualize_mop_xyzrender(
     - Assembly center
     - Pores/cavities (as spheres)
     
+    Note: Uses xyzrender's Molecule and render() API with networkx graphs.
+    
     Args:
         mop: MetalOrganicPolyhedron object to visualize
         show_atoms: Whether to show atoms (default: True)
@@ -287,79 +291,70 @@ def visualize_mop_xyzrender(
         atom_radius: Radius of atom spheres (default: 0.2)
         binding_site_radius: Radius of binding site spheres (default: 0.3)
         pore_radius_scale: Scale factor for pore/cavity spheres (default: 1.0)
-        **kwargs: Additional arguments passed to xyzrender
+        **kwargs: Additional arguments passed to xyzrender.render()
     
     Returns:
-        xyzrender Scene object (can be displayed with .show())
+        xyzrender Molecule or render result (depends on environment)
     
     Raises:
-        BackendNotAvailableError: If xyzrender is not installed
+        BackendNotAvailableError: If xyzrender or networkx is not installed
         InvalidGeometryError: If geometry data is missing
     """
-    if not XYZRENDER_AVAILABLE:
+    if not XYZRENDER_AVAILABLE or nx is None:
         raise BackendNotAvailableError(
-            "xyzrender is not available. Please install it: pip install xyzrender"
+            "xyzrender or networkx is not available. Please install: pip install xyzrender networkx"
         )
     
-    import xyzrender
-    
-    scene = xyzrender.Scene()
+    # Create a networkx graph for all visualization data
+    # xyzrender expects node attributes: 'symbol' (element) and 'position' ([x, y, z])
+    G = nx.Graph()
+    node_id = 0
     
     # Extract atom data
     if show_atoms:
         atoms = _extract_atoms_data(mop)
-        if atoms:
-            xyz_data = []
-            elements = []
-            for atom in atoms:
-                xyz_data.append([atom['x'], atom['y'], atom['z']])
-                elements.append(atom['label'])
-            
-            if xyz_data:
-                scene.add_atoms(
-                    positions=xyz_data,
-                    elements=elements,
-                    radius=atom_radius,
-                    color_scheme=color_scheme
-                )
+        for atom in atoms:
+            G.add_node(node_id, 
+                      symbol=atom['label'],
+                      position=[atom['x'], atom['y'], atom['z']])
+            node_id += 1
     
     # Extract binding sites
     if show_binding_sites:
         binding_sites = _extract_binding_sites_data(mop)
-        if binding_sites:
-            bs_positions = [[bs['x'], bs['y'], bs['z']] for bs in binding_sites]
-            scene.add_atoms(
-                positions=bs_positions,
-                elements=['X'] * len(binding_sites),  # Use placeholder element
-                radius=binding_site_radius,
-                color='orange'
-            )
+        for bs in binding_sites:
+            G.add_node(node_id,
+                       symbol='X',
+                       position=[bs['x'], bs['y'], bs['z']])
+            node_id += 1
     
     # Extract assembly center
     if show_assembly_center:
         center = _extract_assembly_center(mop)
         if center:
-            scene.add_atoms(
-                positions=[[center['x'], center['y'], center['z']]],
-                elements=['X'],
-                radius=binding_site_radius * 1.5,
-                color='red'
-            )
+            G.add_node(node_id,
+                       symbol='X',
+                       position=[center['x'], center['y'], center['z']])
+            node_id += 1
     
-    # Extract and show pores
+    # Extract and add pores as special nodes
     if show_pores:
         pores = _extract_pore_data(mop)
-        if pores:
-            for pore in pores:
-                scene.add_atoms(
-                    positions=[[pore['x'], pore['y'], pore['z']]],
-                    elements=['X'],
-                    radius=pore['radius'] * pore_radius_scale,
-                    color='cyan',
-                    opacity=0.5
-                )
+        for pore in pores:
+            G.add_node(node_id,
+                       symbol='X',
+                       position=[pore['x'], pore['y'], pore['z']])
+            node_id += 1
     
-    return scene
+    if len(G.nodes()) == 0:
+        raise InvalidGeometryError("No data to visualize")
+    
+    # Create Molecule from graph
+    mol = xyzrender.Molecule(graph=G)
+    
+    # In Jupyter notebook, returning the Molecule will automatically display it
+    # In other environments, users can call xyzrender.render(mol)
+    return mol
 
 
 def visualize_mop_plotly(
@@ -494,6 +489,8 @@ def visualize_cbu_xyzrender(
 ) -> Any:
     """Visualize a ChemicalBuildingUnit using xyzrender library.
     
+    Note: Uses xyzrender's Molecule and render() API with networkx graphs.
+    
     Args:
         cbu: ChemicalBuildingUnit object to visualize
         show_atoms: Whether to show atoms (default: True)
@@ -502,72 +499,59 @@ def visualize_cbu_xyzrender(
         color_scheme: Color scheme for atoms (default: 'default')
         atom_radius: Radius of atom spheres (default: 0.2)
         binding_site_radius: Radius of binding site spheres (default: 0.3)
-        **kwargs: Additional arguments passed to xyzrender
+        **kwargs: Additional arguments passed to xyzrender.render()
     
     Returns:
-        xyzrender Scene object
+        xyzrender Molecule object
     
     Raises:
-        BackendNotAvailableError: If xyzrender is not installed
+        BackendNotAvailableError: If xyzrender or networkx is not installed
         InvalidGeometryError: If geometry data is missing
     """
-    if not XYZRENDER_AVAILABLE:
+    if not XYZRENDER_AVAILABLE or nx is None:
         raise BackendNotAvailableError(
-            "xyzrender is not available. Please install it: pip install xyzrender"
+            "xyzrender or networkx is not available. Please install: pip install xyzrender networkx"
         )
     
-    import xyzrender
-    
-    scene = xyzrender.Scene()
+    # Create a networkx graph for all visualization data
+    # xyzrender expects node attributes: 'symbol' (element) and 'position' ([x, y, z])
+    G = nx.Graph()
+    node_id = 0
     
     # Extract atom data
     if show_atoms:
         atoms = _extract_atoms_data(cbu)
-        if atoms:
-            xyz_data = []
-            elements = []
-            for atom in atoms:
-                xyz_data.append([atom['x'], atom['y'], atom['z']])
-                elements.append(atom['label'])
-            
-            if xyz_data:
-                scene.add_atoms(
-                    positions=xyz_data,
-                    elements=elements,
-                    radius=atom_radius,
-                    color_scheme=color_scheme
-                )
+        for atom in atoms:
+            G.add_node(node_id, 
+                      symbol=atom['label'],
+                      position=[atom['x'], atom['y'], atom['z']])
+            node_id += 1
     
     # Extract binding sites
     if show_binding_sites:
         binding_sites = _extract_binding_sites_data(cbu)
-        if binding_sites:
-            bs_positions = [[bs['x'], bs['y'], bs['z']] for bs in binding_sites]
-            scene.add_atoms(
-                positions=bs_positions,
-                elements=['X'] * len(binding_sites),
-                radius=binding_site_radius,
-                color='orange'
-            )
+        for bs in binding_sites:
+            G.add_node(node_id,
+                       symbol='X',
+                       position=[bs['x'], bs['y'], bs['z']])
+            node_id += 1
     
     # Extract assembly center
     if show_assembly_center:
         center = _extract_assembly_center(cbu)
         if center:
-            scene.add_atoms(
-                positions=[[center['x'], center['y'], center['z']]],
-                elements=['X'],
-                radius=binding_site_radius * 1.5,
-                color='red'
-            )
+            G.add_node(node_id,
+                       symbol='X',
+                       position=[center['x'], center['y'], center['z']])
+            node_id += 1
     
-    # Set title
-    try:
-        scene.title = f'CBU: {list(cbu.hasCBUFormula)[0]}'
-    except (AttributeError, IndexError):
-        scene.title = 'CBU Visualization'
+    if len(G.nodes()) == 0:
+        raise InvalidGeometryError("No data to visualize")
     
-    return scene
+    # Create Molecule from graph
+    mol = xyzrender.Molecule(graph=G)
+    
+    return mol
 
 
 def visualize_cbu_plotly(
@@ -686,6 +670,8 @@ def visualize_am_xyzrender(
     
     Shows GBU coordinate centers, connecting points, and optionally pores.
     
+    Note: Uses xyzrender's Molecule and render() API with networkx graphs.
+    
     Args:
         am: AssemblyModel object to visualize
         show_pores: Whether to show pores/pore rings (default: True)
@@ -693,19 +679,20 @@ def visualize_am_xyzrender(
         gbu_radius: Radius of GBU center spheres (default: 0.3)
         cp_radius: Radius of connecting point spheres (default: 0.2)
         pore_radius_scale: Scale factor for pore radii (default: 1.0)
-        **kwargs: Additional arguments passed to xyzrender
+        **kwargs: Additional arguments passed to xyzrender.render()
     
     Returns:
-        xyzrender Scene object
+        xyzrender Molecule object
     """
-    if not XYZRENDER_AVAILABLE:
+    if not XYZRENDER_AVAILABLE or nx is None:
         raise BackendNotAvailableError(
-            "xyzrender is not available. Please install it: pip install xyzrender"
+            "xyzrender or networkx is not available. Please install: pip install xyzrender networkx"
         )
     
-    import xyzrender
-    
-    scene = xyzrender.Scene()
+    # Create a networkx graph for all visualization data
+    # xyzrender expects node attributes: 'symbol' and 'position' ([x, y, z])
+    G = nx.Graph()
+    node_id = 0
     
     # Extract GBU data
     gbu_data = _extract_gbu_data(am)
@@ -713,42 +700,35 @@ def visualize_am_xyzrender(
     if gbu_data:
         for item in gbu_data:
             if 'ConnectingPoint' in item['label']:
-                # Connecting points
-                scene.add_atoms(
-                    positions=[[item['x'], item['y'], item['z']]],
-                    elements=['X'],
-                    radius=cp_radius,
-                    color='green'
-                )
+                # Connecting points - use green color via symbol
+                G.add_node(node_id,
+                           symbol='Cl',  # Chlorine is green-ish, or use custom
+                           position=[item['x'], item['y'], item['z']])
             else:
-                # GBU centers
-                scene.add_atoms(
-                    positions=[[item['x'], item['y'], item['z']]],
-                    elements=['X'],
-                    radius=gbu_radius,
-                    color='blue'
-                )
+                # GBU centers - use a distinctive symbol
+                G.add_node(node_id,
+                           symbol='Br',  # Bromine is brown-ish
+                           position=[item['x'], item['y'], item['z']])
+            node_id += 1
     
     # Extract and show pores
     if show_pores:
         pores = _extract_pore_data(am)
         if pores:
             for pore in pores:
-                scene.add_atoms(
-                    positions=[[pore['x'], pore['y'], pore['z']]],
-                    elements=['X'],
-                    radius=pore['radius'] * pore_radius_scale,
-                    color='cyan' if pore['label'] == 'Cavity' else 'magenta',
-                    opacity=0.5
-                )
+                # Use a distinctive symbol for pores
+                G.add_node(node_id,
+                           symbol='He',  # Helium is light
+                           position=[pore['x'], pore['y'], pore['z']])
+                node_id += 1
     
-    # Set title
-    try:
-        scene.title = f'AM: {am.instance_iri}'
-    except AttributeError:
-        scene.title = 'AssemblyModel Visualization'
+    if len(G.nodes()) == 0:
+        raise InvalidGeometryError("No GBU data to visualize")
     
-    return scene
+    # Create Molecule from graph
+    mol = xyzrender.Molecule(graph=G)
+    
+    return mol
 
 
 def visualize_am_plotly(
