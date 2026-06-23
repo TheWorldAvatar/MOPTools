@@ -291,7 +291,7 @@ def visualise_mop_xyzrender(
         atom_radius: Radius of atom spheres (default: 0.2)
         binding_site_radius: Radius of binding site spheres (default: 0.3)
         pore_radius_scale: Scale factor for pore/cavity spheres (default: 1.0)
-        **kwargs: Additional arguments passed to xyzrender.render()
+        **kwargs: Currently unused (reserved for future xyzrender API compatibility)
     
     Returns:
         xyzrender Molecule or render result (depends on environment)
@@ -354,7 +354,8 @@ def visualise_mop_xyzrender(
     
     # Render the molecule - in Jupyter this will display inline via SVGResult._repr_svg_()
     # In non-Jupyter environments, this returns an SVGResult that can be saved or displayed
-    return xyzrender.render(mol, **kwargs)
+    # Note: We don't pass our custom kwargs to xyzrender.render() as they are not part of the API
+    return xyzrender.render(mol)
 
 
 def visualise_mop_plotly(
@@ -499,7 +500,7 @@ def visualise_cbu_xyzrender(
         color_scheme: Color scheme for atoms (default: 'default')
         atom_radius: Radius of atom spheres (default: 0.2)
         binding_site_radius: Radius of binding site spheres (default: 0.3)
-        **kwargs: Additional arguments passed to xyzrender.render()
+        **kwargs: Currently unused (reserved for future xyzrender API compatibility)
     
     Returns:
         xyzrender Molecule object
@@ -552,7 +553,8 @@ def visualise_cbu_xyzrender(
     mol = xyzrender.Molecule(graph=G)
     
     # Render the molecule - in Jupyter this will display inline via SVGResult._repr_svg_()
-    return xyzrender.render(mol, **kwargs)
+    # Note: We don't pass our custom kwargs to xyzrender.render() as they are not part of the API
+    return xyzrender.render(mol)
 
 
 def visualise_cbu_plotly(
@@ -680,7 +682,7 @@ def visualise_am_xyzrender(
         gbu_radius: Radius of GBU center spheres (default: 0.3)
         cp_radius: Radius of connecting point spheres (default: 0.2)
         pore_radius_scale: Scale factor for pore radii (default: 1.0)
-        **kwargs: Additional arguments passed to xyzrender.render()
+        **kwargs: Currently unused (reserved for future xyzrender API compatibility)
     
     Returns:
         xyzrender Molecule object
@@ -730,7 +732,8 @@ def visualise_am_xyzrender(
     mol = xyzrender.Molecule(graph=G)
     
     # Render the molecule - in Jupyter this will display inline via SVGResult._repr_svg_()
-    return xyzrender.render(mol, **kwargs)
+    # Note: We don't pass our custom kwargs to xyzrender.render() as they are not part of the API
+    return xyzrender.render(mol)
 
 
 def visualise_am_plotly(
