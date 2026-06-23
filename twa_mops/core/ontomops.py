@@ -241,22 +241,21 @@ class AssemblyModel(BaseClass):
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
     hasPoreRing: Optional[HasPoreRing[PoreRing]] = None
 
-    def visualise(self, show_pores: bool = True, backend: str = 'auto', **kwargs):
-        """Visualize the AssemblyModel.
+    def visualise(self, backend: str = 'auto', data_dir=None, **kwargs):
+        """Visualise the AssemblyModel.
         
         Uses xyzrender if available (preferred), falls back to plotly.
-        For AM, pores are shown when using xyzrender backend.
         
         Args:
-            show_pores: Whether to show pores/cavities (default: True, only works with xyzrender)
             backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
+            data_dir: Data directory for geometry files (default: None)
             **kwargs: Additional arguments passed to the visualization function
             
         Returns:
-            Visualization object (xyzrender.Scene or plotly.Figure)
+            Visualisation object (xyzrender.SVGResult or plotly.Figure)
         """
         from twa_mops.utils.visualization import visualise_am
-        return visualise_am(self, show_pores=show_pores, backend=backend, **kwargs)
+        return visualise_am(self, backend=backend, data_dir=data_dir, **kwargs)
 
     @staticmethod
     def process_geometry_json(am_json, gbu_type_1_label, gbu_type_2_label):
@@ -1751,20 +1750,19 @@ class ChemicalBuildingUnit(BaseClass):
                 length_center_to_binding = length_center_to_binding_atoms + min([cap.PERIODIC_TABLE.GetRcovalent(a.label) for a in binding_atoms])
         return rotated_binding_vector, most_possible_binding_site_angle, length_center_to_binding
 
-    def visualise(self, sparql_client = None, data_dir=None, show_pores: bool = True, backend: str = 'auto', **kwargs):
-        """Visualize the ChemicalBuildingUnit.
+    def visualise(self, sparql_client = None, data_dir=None, backend: str = 'auto', **kwargs):
+        """Visualise the ChemicalBuildingUnit.
         
         Uses xyzrender if available (preferred), falls back to plotly.
         
         Args:
             sparql_client: SPARQL client for loading geometry if needed
             data_dir: Data directory for geometry files
-            show_pores: Whether to show pores/cavities (default: True, only works with xyzrender)
             backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
             **kwargs: Additional arguments passed to the visualization function
             
         Returns:
-            Visualization object (xyzrender.Scene or plotly.Figure)
+            Visualisation object (xyzrender.SVGResult or plotly.Figure)
         """
         from twa_mops.utils.visualization import visualise_cbu
         
@@ -1774,7 +1772,7 @@ class ChemicalBuildingUnit(BaseClass):
                 raise ValueError('SPARQL client is required to visualise/load the geometry')
             self.load_geometry_from_fileserver(sparql_client, data_dir=data_dir)
         
-        return visualise_cbu(self, show_pores=show_pores, backend=backend, **kwargs)
+        return visualise_cbu(self, backend=backend, data_dir=data_dir, **kwargs)
 
 
 class CBUAssemblyTransformation(BaseClass):
@@ -2081,21 +2079,20 @@ class MetalOrganicPolyhedron(CoordinationCage):
             hasCBUAssemblyTransformation=cbu_assembly_transformation_lst
         )
 
-    def visualise(self, sparql_client = None, data_dir=None, show_pores: bool = True, backend: str = 'auto', **kwargs):
-        """Visualize the MetalOrganicPolyhedron.
+    def visualise(self, sparql_client = None, data_dir=None, backend: str = 'auto', **kwargs):
+        """Visualise the MetalOrganicPolyhedron.
         
         Uses xyzrender if available (preferred), falls back to plotly.
-        For MOP, pores/cavities are shown by default when using xyzrender.
+        Pores are automatically detected and displayed for MOPs when using xyzrender.
         
         Args:
             sparql_client: SPARQL client for loading geometry if needed
             data_dir: Data directory for geometry files
-            show_pores: Whether to show pores/cavities (default: True, only works with xyzrender)
             backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
-            **kwargs: Additional arguments passed to the visualization function
+            **kwargs: Additional arguments passed to xyzrender.render()
             
         Returns:
-            Visualization object (xyzrender.Scene or plotly.Figure)
+            Visualisation object (xyzrender.SVGResult or plotly.Figure)
         """
         from twa_mops.utils.visualization import visualise_mop
         
@@ -2105,7 +2102,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
                 raise ValueError('SPARQL client is required to visualise/load the geometry')
             list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client, data_dir=data_dir)
         
-        return visualise_mop(self, show_pores=show_pores, backend=backend, **kwargs)
+        return visualise_mop(self, backend=backend, data_dir=data_dir, **kwargs)
 
 
     def has_cbu_overlaps(self, threshold_factor: float = 1.2) -> bool:
