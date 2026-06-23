@@ -2,6 +2,12 @@
 
 This module provides the KnowledgeGraphClient class for interacting with
 the Knowledge Graph using SPARQL queries with batching and caching support.
+
+Custom Exceptions:
+    KnowledgeGraphError: Base exception for KG-related errors
+    QueryError: Raised when SPARQL queries fail
+    ObjectNotFoundError: Raised when requested objects don't exist in KG
+    InvalidObjectError: Raised when objects have invalid data/structure
 """
 
 from functools import lru_cache
@@ -18,19 +24,163 @@ except ImportError:
 
 
 # ============================================================================
+# Custom Exceptions
+# ============================================================================
+
+class KnowledgeGraphError(Exception):
+    """Base exception for Knowledge Graph-related errors.
+    
+    All custom exceptions from the KG client inherit from this class,
+    allowing users to catch all KG-related errors with a single except clause.
+    
+    Example:
+        try:
+            client.pull_objects(iris)
+        except KnowledgeGraphError as e:
+            print(f"KG error: {e}")
+    """
+    pass
+
+
+class QueryError(KnowledgeGraphError):
+    """Raised when a SPARQL query fails.
+    
+    This exception is raised when:
+    - The SPARQL endpoint is unreachable
+    - The query syntax is invalid
+    - The query times out
+    - Authentication fails
+    
+    Attributes:
+        query: The SPARQL query that failed (if available)
+        endpoint: The SPARQL endpoint URL (if available)
+        original_error: The original exception (if any)
+    """
+    def __init__(self, message: str, query: Optional[str] = None, 
+                 endpoint: Optional[str] = None, original_error: Optional[Exception] = None):
+        self.query = query
+        self.endpoint = endpoint
+        self.original_error = original_error
+        
+        # Build detailed error message
+        parts = [message]
+        if query:
+            parts.append(f"Query: {query[:200]}..." if len(query) > 200 else f"Query: {query}")
+        if endpoint:
+            parts.append(f"Endpoint: {endpoint}")
+        if original_error:
+            parts.append(f"Original error: {original_error}")
+        
+        super().__init__("\n".join(parts))
+
+
+class ObjectNotFoundError(KnowledgeGraphError):
+    """Raised when a requested object doesn't exist in the Knowledge Graph.
+    
+    This exception is raised when:
+    - An IRI doesn't exist in the KG
+    - A query returns no results for a required object
+    
+    Attributes:
+        iris: List of IRIs that were not found
+        object_type: The type of object that was being fetched (if known)
+    """
+    def __init__(self, message: str, iris: Optional[List[str]] = None,
+                 object_type: Optional[str] = None):
+        self.iris = iris or []
+        self.object_type = object_type
+        
+        parts = [message]
+        if iris:
+            parts.append(f"Not found IRIs: {', '.join(iris[:5])}" + 
+                        ("..." if len(iris) > 5 else ""))
+        if object_type:
+            parts.append(f"Object type: {object_type}")
+        
+        super().__init__("\n".join(parts))
+
+
+class InvalidObjectError(KnowledgeGraphError):
+    """Raised when an object has invalid data or structure.
+    
+    This exception is raised when:
+    - A retrieved object has missing required properties
+    - An object has invalid property values
+    - An object cannot be instantiated from the KG data
+    
+    Attributes:
+        iri: The IRI of the invalid object (if available)
+        property_name: The name of the invalid property (if available)
+        reason: Description of why the object is invalid
+    """
+    def __init__(self, message: str, iri: Optional[str] = None,
+                 property_name: Optional[str] = None, reason: Optional[str] = None):
+        self.iri = iri
+        self.property_name = property_name
+        self.reason = reason
+        
+        parts = [message]
+        if iri:
+            parts.append(f"IRI: {iri}")
+        if property_name:
+            parts.append(f"Property: {property_name}")
+        if reason:
+            parts.append(f"Reason: {reason}")
+        
+        super().__init__("\n".join(parts))
+
+
+# ============================================================================
 # Validation Models
 # ============================================================================
+#
+# These Pydantic models provide input validation for the KnowledgeGraphClient.
+# They ensure that:
+# - IRIs are properly formatted URLs or URNs
+# - Depth values are within safe bounds (-1 to 10)
+# - Endpoints are valid HTTP/HTTPS URLs
+# - Cache sizes are reasonable (1-10000)
+# - File paths exist when required
+#
+# Usage: Call the model with the input value, e.g., IRIInput(iri=my_iri).iri
+#
 
 class IRIInput(BaseModel):
     """Validation model for IRI (Internationalized Resource Identifier) inputs.
     
-    Validates that the IRI is a valid URL format and is not empty.
+    Validates that the IRI is a valid URL format (HTTP/HTTPS) or URN format,
+    and is not empty. This ensures all KG resource identifiers are properly
+    formatted before being used in queries.
+    
+    Accepts:
+        - HTTP/HTTPS URLs: http://example.com/kg/resource
+        - URN format: urn:namespace:resource
+    
+    Rejects:
+        - Empty strings or None
+        - URLs without protocol (e.g., "example.com")
+        - Malformed URLs
+        
+    Example:
+        >>> IRIInput(iri="https://www.theworldavatar.com/kg/ontomops/CBU_123")
+        >>> IRIInput(iri="urn:test:resource")
+        >>> IRIInput(iri="invalid")  # Raises ValueError
     """
     iri: str = Field(..., description="The IRI/URL to validate")
     
     @validator('iri')
     def validate_iri(cls, v):
-        """Validate IRI format."""
+        """Validate IRI format.
+        
+        Args:
+            v: The IRI string to validate
+            
+        Returns:
+            str: The validated, stripped IRI
+            
+        Raises:
+            ValueError: If IRI is empty, malformed, or invalid format
+        """
         if not v or not v.strip():
             raise ValueError("IRI cannot be empty or None")
         v = v.strip()
@@ -57,12 +207,27 @@ class IRIInput(BaseModel):
 
 
 class IRIsInput(BaseModel):
-    """Validation model for a list of IRIs."""
+    """Validation model for a list of IRIs.
+    
+    Validates each IRI in a list using IRIInput validation. Accepts empty
+    lists (which will return empty results from queries).
+    
+    Example:
+        >>> IRIsInput(iris=["http://example.com/iri1", "http://example.com/iri2"])
+        >>> IRIsInput(iris=[])  # Returns empty list
+    """
     iris: List[str] = Field(..., description="List of IRIs to validate")
     
     @validator('iris')
     def validate_iris_list(cls, v):
-        """Validate list of IRIs."""
+        """Validate list of IRIs.
+        
+        Args:
+            v: List of IRI strings to validate
+            
+        Returns:
+            List[str]: List of validated IRIs (empty list if input was empty)
+        """
         if not v:
             return v  # Empty list is allowed
         
@@ -75,7 +240,24 @@ class IRIsInput(BaseModel):
 
 
 class DepthInput(BaseModel):
-    """Validation model for recursion depth parameter."""
+    """Validation model for recursion depth parameter.
+    
+    Validates that depth values are within safe bounds for KG queries.
+    
+    Valid depth values:
+        - -1: infinite recursion (default, most reliable but slowest)
+        - 0: no recursion (returns only direct properties as IRIs, not loaded objects)
+        - 1-10: n-level recursion (higher = deeper property traversal)
+    
+    Note: For MOP assembly, depth=3 or depth=-1 is recommended to ensure
+    all required properties are loaded (AM -> GBU -> GBUCoordinateCenter -> 
+    GBUConnectingPoint, and GBU -> GBUType -> Modularity).
+    
+    Example:
+        >>> DepthInput(depth=-1)  # Infinite recursion
+        >>> DepthInput(depth=3)   # 3-level recursion (good for assembly)
+        >>> DepthInput(depth=11)  # Raises ValueError
+    """
     depth: int = Field(
         default=-1,
         description="Recursion depth for property traversal",
@@ -85,15 +267,19 @@ class DepthInput(BaseModel):
     
     @validator('depth')
     def validate_depth(cls, v):
-        """Validate depth value.
+        """Validate depth value with additional checks.
         
-        Valid depth values:
-        - -1: infinite recursion
-        - 0: no recursion (returns only direct properties as IRIs)
-        - 1+: n-level recursion
-        
-        We limit to 10 to prevent accidentally excessive recursion.
+        Args:
+            v: The depth value to validate
+            
+        Returns:
+            int: The validated depth value
+            
+        Raises:
+            ValueError: If depth is outside the valid range
         """
+        # Note: ge=-1 and le=10 in Field already enforce bounds,
+        # but we add custom messages for better UX
         if v < -1:
             raise ValueError(f"Depth must be >= -1, got {v}")
         if v > 10:
@@ -105,12 +291,33 @@ class DepthInput(BaseModel):
 
 
 class EndpointInput(BaseModel):
-    """Validation model for SPARQL endpoint URL."""
+    """Validation model for SPARQL endpoint URL.
+    
+    Validates that the SPARQL endpoint is a valid HTTP/HTTPS URL.
+    
+    The endpoint should typically contain '/sparql' in the path, though
+    this is not strictly enforced (some servers may use different paths).
+    
+    Example:
+        >>> EndpointInput(endpoint="http://localhost:3838/sparql")
+        >>> EndpointInput(endpoint="https://www.theworldavatar.com/kg/sparql")
+        >>> EndpointInput(endpoint="ftp://example.com")  # Raises ValueError
+    """
     endpoint: str = Field(..., description="SPARQL endpoint URL")
     
     @validator('endpoint')
     def validate_endpoint(cls, v):
-        """Validate SPARQL endpoint URL."""
+        """Validate SPARQL endpoint URL.
+        
+        Args:
+            v: The endpoint URL to validate
+            
+        Returns:
+            str: The validated, stripped endpoint URL
+            
+        Raises:
+            ValueError: If endpoint is empty or not a valid HTTP/HTTPS URL
+        """
         if not v or not v.strip():
             raise ValueError("SPARQL endpoint cannot be empty")
         v = v.strip()
@@ -131,7 +338,18 @@ class EndpointInput(BaseModel):
 
 
 class CacheSizeInput(BaseModel):
-    """Validation model for cache size parameter."""
+    """Validation model for cache size parameter.
+    
+    Validates that cache size is within reasonable bounds to prevent
+    excessive memory usage.
+    
+    Valid range: 1 to 10000 objects (default: 128)
+    
+    Example:
+        >>> CacheSizeInput(max_cache_size=128)  # Default
+        >>> CacheSizeInput(max_cache_size=1000)  # Larger cache
+        >>> CacheSizeInput(max_cache_size=0)  # Raises ValueError
+    """
     max_cache_size: int = Field(
         default=128,
         description="Maximum number of objects to cache",
@@ -141,7 +359,17 @@ class CacheSizeInput(BaseModel):
     
     @validator('max_cache_size')
     def validate_cache_size(cls, v):
-        """Validate cache size."""
+        """Validate cache size.
+        
+        Args:
+            v: The cache size to validate
+            
+        Returns:
+            int: The validated cache size
+            
+        Raises:
+            ValueError: If cache size is outside the valid range (1-10000)
+        """
         if v < 1:
             raise ValueError(f"Cache size must be at least 1, got {v}")
         if v > 10000:
@@ -153,24 +381,60 @@ class CacheSizeInput(BaseModel):
 
 
 class FilePathInput(BaseModel):
-    """Validation model for file paths."""
+    """Validation model for file paths.
+    
+    Validates that file paths are non-empty strings. Does not check
+    if the file exists (use FilePathExistsInput for that).
+    
+    Example:
+        >>> FilePathInput(path="/path/to/file.xyz")
+        >>> FilePathInput(path="")  # Raises ValueError
+    """
     path: str = Field(..., description="File path to validate")
     
     @validator('path')
     def validate_path(cls, v):
-        """Validate file path is not empty."""
+        """Validate file path is not empty.
+        
+        Args:
+            v: The file path to validate
+            
+        Returns:
+            str: The validated, stripped file path
+            
+        Raises:
+            ValueError: If path is empty or None
+        """
         if not v or not v.strip():
             raise ValueError("File path cannot be empty")
         return v.strip()
 
 
 class FilePathExistsInput(FilePathInput):
-    """Validation model for file paths that must exist."""
+    """Validation model for file paths that must exist.
+    
+    Extends FilePathInput to also verify that the file exists on disk
+    and is a regular file (not a directory).
+    
+    Example:
+        >>> FilePathExistsInput(path="/path/to/existing_file.xyz")
+        >>> FilePathExistsInput(path="/path/to/missing_file.xyz")  # Raises ValueError
+    """
     path: str = Field(..., description="File path that must exist")
     
     @validator('path')
     def validate_path_exists(cls, v):
-        """Validate file path exists."""
+        """Validate file path exists and is a file.
+        
+        Args:
+            v: The file path to validate
+            
+        Returns:
+            str: The validated file path
+            
+        Raises:
+            ValueError: If path is empty, doesn't exist, or is not a file
+        """
         v = super().validate_path(v)
         
         path_obj = Path(v)
@@ -321,29 +585,68 @@ class KnowledgeGraphClient:
         iris: tuple,
         depth: int = -1,
     ) -> List[Dict[str, Any]]:
-        """Internal cached method for pulling objects."""
+        """Internal cached method for pulling objects.
+        
+        Args:
+            iris: Tuple of IRIs to pull
+            depth: Recursion depth (note: depth is not yet used in the query)
+        
+        Returns:
+            List of dictionaries containing the pulled object data
+        
+        Raises:
+            QueryError: If the SPARQL query fails
+        """
         start_time = time.time()
         
-        # Create batched query with UNION for multiple IRIs
-        iris_str = " ".join(f"<{iri}>" for iri in iris)
-        
-        # For now, use simple query; depth handling would require more complex SPARQL
-        query = f"""
-        SELECT ?s ?p ?o WHERE {{
-          VALUES ?s {{ {iris_str} }}
-          ?s ?p ?o .
-        }}
-        """
-        
-        results = self.sparql_client.perform_query(query)
-        
-        if self.enable_performance_timing:
-            elapsed = time.time() - start_time
-            self._last_query_time = elapsed
-            self._total_query_time += elapsed
-            self._query_count += 1
-        
-        return [dict(row) for row in results]
+        try:
+            # Create batched query with UNION for multiple IRIs
+            iris_str = " ".join(f"<{iri}>" for iri in iris)
+            
+            # For now, use simple query; depth handling would require more complex SPARQL
+            query = f"""
+            SELECT ?s ?p ?o WHERE {{
+              VALUES ?s {{ {iris_str} }}
+              ?s ?p ?o .
+            }}
+            """
+            
+            results = self.sparql_client.perform_query(query)
+            
+            if self.enable_performance_timing:
+                elapsed = time.time() - start_time
+                self._last_query_time = elapsed
+                self._total_query_time += elapsed
+                self._query_count += 1
+            
+            # Convert results to list of dicts
+            result_list = [dict(row) for row in results]
+            
+            # Check if we got results for all requested IRIs
+            if result_list and iris:
+                result_iris = {row.get('s') for row in result_list if row.get('s')}
+                missing_iris = [iri for iri in iris if iri not in result_iris]
+                
+                if missing_iris:
+                    # Log a warning but don't fail - some IRIs might legitimately have no properties
+                    import warnings
+                    warnings.warn(
+                        f"No data returned for {len(missing_iris)} IRIs: {missing_iris[:3]}" +
+                        ("..." if len(missing_iris) > 3 else ""),
+                        UserWarning,
+                        stacklevel=4
+                    )
+            
+            return result_list
+            
+        except Exception as e:
+            # Wrap any query execution errors in our custom exception
+            raise QueryError(
+                f"Failed to execute SPARQL query",
+                query=query if 'query' in locals() else None,
+                endpoint=self.endpoint,
+                original_error=e
+            ) from e
     
     def pull_single_object(
         self,
