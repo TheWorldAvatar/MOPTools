@@ -34,12 +34,12 @@ class TestVisualizationImports:
     """Test that visualization module imports correctly."""
     
     def test_visualization_module_imports(self):
-        """Test that visualization module can be imported."""
+        """Test that visualisation module can be imported."""
         viz = load_visualization_module()
         
-        assert hasattr(viz, 'visualize_mop')
-        assert hasattr(viz, 'visualize_cbu')
-        assert hasattr(viz, 'visualize_am')
+        assert hasattr(viz, 'visualise_mop')
+        assert hasattr(viz, 'visualise_cbu')
+        assert hasattr(viz, 'visualise_am')
         assert hasattr(viz, 'VisualizationError')
         assert hasattr(viz, 'BackendNotAvailableError')
         assert hasattr(viz, 'InvalidGeometryError')
@@ -265,7 +265,7 @@ class TestBackendSelection:
             pass
         
         with pytest.raises(ValueError, match="Unknown backend"):
-            viz.visualize_mop(MockObj(), backend='invalid')
+            viz.visualise_mop(MockObj(), backend='invalid')
 
 
 class TestModuleExports:
@@ -286,17 +286,17 @@ class TestModuleExports:
             'VisualizationError',
             'BackendNotAvailableError',
             'InvalidGeometryError',
-            'visualize_mop',
-            'visualize_cbu',
-            'visualize_am',
-            'visualize_mop_xyzrender',
-            'visualize_mop_plotly',
-            'visualize_cbu_xyzrender',
-            'visualize_cbu_plotly',
-            'visualize_am_xyzrender',
-            'visualize_am_plotly',
-            'visualize_with_xyzrender',
-            'visualize_with_plotly',
+            'visualise_mop',
+            'visualise_cbu',
+            'visualise_am',
+            'visualise_mop_xyzrender',
+            'visualise_mop_plotly',
+            'visualise_cbu_xyzrender',
+            'visualise_cbu_plotly',
+            'visualise_am_xyzrender',
+            'visualise_am_plotly',
+            'visualise_with_xyzrender',
+            'visualise_with_plotly',
         ]
         
         for export in expected_exports:

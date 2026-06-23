@@ -255,8 +255,8 @@ class AssemblyModel(BaseClass):
         Returns:
             Visualization object (xyzrender.Scene or plotly.Figure)
         """
-        from twa_mops.utils.visualization import visualize_am
-        return visualize_am(self, show_pores=show_pores, backend=backend, **kwargs)
+        from twa_mops.utils.visualization import visualise_am
+        return visualise_am(self, show_pores=show_pores, backend=backend, **kwargs)
 
     @staticmethod
     def process_geometry_json(am_json, gbu_type_1_label, gbu_type_2_label):
@@ -1766,7 +1766,7 @@ class ChemicalBuildingUnit(BaseClass):
         Returns:
             Visualization object (xyzrender.Scene or plotly.Figure)
         """
-        from twa_mops.utils.visualization import visualize_cbu
+        from twa_mops.utils.visualization import visualise_cbu
         
         # Load geometry if needed
         if list(self.hasGeometry)[0].hasPoints is None:
@@ -1774,7 +1774,7 @@ class ChemicalBuildingUnit(BaseClass):
                 raise ValueError('SPARQL client is required to visualise/load the geometry')
             self.load_geometry_from_fileserver(sparql_client, data_dir=data_dir)
         
-        return visualize_cbu(self, show_pores=show_pores, backend=backend, **kwargs)
+        return visualise_cbu(self, show_pores=show_pores, backend=backend, **kwargs)
 
 
 class CBUAssemblyTransformation(BaseClass):
@@ -2097,7 +2097,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
         Returns:
             Visualization object (xyzrender.Scene or plotly.Figure)
         """
-        from twa_mops.utils.visualization import visualize_mop
+        from twa_mops.utils.visualization import visualise_mop
         
         # Load geometry if needed
         if list(self.hasGeometry)[0].hasPoints is None:
@@ -2105,7 +2105,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
                 raise ValueError('SPARQL client is required to visualise/load the geometry')
             list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client, data_dir=data_dir)
         
-        return visualize_mop(self, show_pores=show_pores, backend=backend, **kwargs)
+        return visualise_mop(self, show_pores=show_pores, backend=backend, **kwargs)
 
 
     def has_cbu_overlaps(self, threshold_factor: float = 1.2) -> bool:

@@ -259,7 +259,7 @@ def _extract_pore_data(obj) -> List[Dict[str, Any]]:
 # ============================================================================
 
 
-def visualize_mop_xyzrender(
+def visualise_mop_xyzrender(
     mop,
     show_atoms: bool = True,
     show_binding_sites: bool = True,
@@ -271,7 +271,7 @@ def visualize_mop_xyzrender(
     pore_radius_scale: float = 1.0,
     **kwargs
 ) -> Any:
-    """Visualize a MetalOrganicPolyhedron using xyzrender library.
+    """Visualise a MetalOrganicPolyhedron using xyzrender library.
     
     This function creates an interactive 3D visualization of a MOP with:
     - Atoms (colored by element)
@@ -357,7 +357,7 @@ def visualize_mop_xyzrender(
     return xyzrender.render(mol, **kwargs)
 
 
-def visualize_mop_plotly(
+def visualise_mop_plotly(
     mop,
     show_atoms: bool = True,
     show_binding_sites: bool = True,
@@ -477,7 +477,7 @@ def visualize_mop_plotly(
     return fig
 
 
-def visualize_cbu_xyzrender(
+def visualise_cbu_xyzrender(
     cbu,
     show_atoms: bool = True,
     show_binding_sites: bool = True,
@@ -555,7 +555,7 @@ def visualize_cbu_xyzrender(
     return xyzrender.render(mol, **kwargs)
 
 
-def visualize_cbu_plotly(
+def visualise_cbu_plotly(
     cbu,
     show_atoms: bool = True,
     show_binding_sites: bool = True,
@@ -658,7 +658,7 @@ def visualize_cbu_plotly(
     return fig
 
 
-def visualize_am_xyzrender(
+def visualise_am_xyzrender(
     am,
     show_pores: bool = True,
     color_scheme: str = 'default',
@@ -733,7 +733,7 @@ def visualize_am_xyzrender(
     return xyzrender.render(mol, **kwargs)
 
 
-def visualize_am_plotly(
+def visualise_am_plotly(
     am,
     width: int = 1200,
     height: int = 800,
@@ -812,26 +812,26 @@ def visualize_am_plotly(
 # ============================================================================
 
 
-def visualize_mop(
+def visualise_mop(
     mop,
     show_pores: bool = True,
     backend: str = 'auto',
     **kwargs
 ) -> Any:
-    """Visualize a MetalOrganicPolyhedron.
+    """Visualise a MetalOrganicPolyhedron.
     
     Automatically selects the best available backend (xyzrender preferred, 
     plotly as fallback). Can also explicitly specify the backend.
     
     Args:
-        mop: MetalOrganicPolyhedron object to visualize
+        mop: MetalOrganicPolyhedron object to visualise
         show_pores: Whether to show pores/cavities (default: True)
                     Note: Only works with xyzrender backend
         backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
         **kwargs: Additional arguments passed to the specific backend function
     
     Returns:
-        Visualization object (xyzrender.Scene or plotly.Figure)
+        Visualisation object (xyzrender.SVGResult or plotly.Figure)
     
     Raises:
         BackendNotAvailableError: If no backend is available
@@ -841,103 +841,103 @@ def visualize_mop(
     if backend == 'auto':
         # Prefer xyzrender if available
         if XYZRENDER_AVAILABLE:
-            return visualize_mop_xyzrender(mop, show_pores=show_pores, **kwargs)
+            return visualise_mop_xyzrender(mop, show_pores=show_pores, **kwargs)
         else:
-            return visualize_mop_plotly(mop, show_pores=False, **kwargs)
+            return visualise_mop_plotly(mop, show_pores=False, **kwargs)
     elif backend == 'xyzrender':
         if not XYZRENDER_AVAILABLE:
             raise BackendNotAvailableError(
                 "xyzrender is not available. Please install it: pip install xyzrender"
             )
-        return visualize_mop_xyzrender(mop, show_pores=show_pores, **kwargs)
+        return visualise_mop_xyzrender(mop, show_pores=show_pores, **kwargs)
     elif backend == 'plotly':
         if not PLOTLY_AVAILABLE:
             raise BackendNotAvailableError(
                 "plotly is not available. Please install it: pip install plotly"
             )
-        return visualize_mop_plotly(mop, show_pores=False, **kwargs)
+        return visualise_mop_plotly(mop, show_pores=False, **kwargs)
     else:
         raise ValueError(f"Unknown backend: {backend}. Use 'auto', 'xyzrender', or 'plotly'")
 
 
-def visualize_cbu(
+def visualise_cbu(
     cbu,
     backend: str = 'auto',
     **kwargs
 ) -> Any:
-    """Visualize a ChemicalBuildingUnit.
+    """Visualise a ChemicalBuildingUnit.
     
     Automatically selects the best available backend.
     
     Args:
-        cbu: ChemicalBuildingUnit object to visualize
+        cbu: ChemicalBuildingUnit object to visualise
         backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
         **kwargs: Additional arguments passed to the specific backend function
     
     Returns:
-        Visualization object (xyzrender.Scene or plotly.Figure)
+        Visualisation object (xyzrender.SVGResult or plotly.Figure)
     """
     _check_backend_availability()
     
     if backend == 'auto':
         if XYZRENDER_AVAILABLE:
-            return visualize_cbu_xyzrender(cbu, **kwargs)
+            return visualise_cbu_xyzrender(cbu, **kwargs)
         else:
-            return visualize_cbu_plotly(cbu, **kwargs)
+            return visualise_cbu_plotly(cbu, **kwargs)
     elif backend == 'xyzrender':
         if not XYZRENDER_AVAILABLE:
             raise BackendNotAvailableError(
                 "xyzrender is not available. Please install it: pip install xyzrender"
             )
-        return visualize_cbu_xyzrender(cbu, **kwargs)
+        return visualise_cbu_xyzrender(cbu, **kwargs)
     elif backend == 'plotly':
         if not PLOTLY_AVAILABLE:
             raise BackendNotAvailableError(
                 "plotly is not available. Please install it: pip install plotly"
             )
-        return visualize_cbu_plotly(cbu, **kwargs)
+        return visualise_cbu_plotly(cbu, **kwargs)
     else:
         raise ValueError(f"Unknown backend: {backend}. Use 'auto', 'xyzrender', or 'plotly'")
 
 
-def visualize_am(
+def visualise_am(
     am,
     show_pores: bool = True,
     backend: str = 'auto',
     **kwargs
 ) -> Any:
-    """Visualize an AssemblyModel.
+    """Visualise an AssemblyModel.
     
     Automatically selects the best available backend.
     
     Args:
-        am: AssemblyModel object to visualize
+        am: AssemblyModel object to visualise
         show_pores: Whether to show pores/pore rings (default: True, only works with xyzrender)
         backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
         **kwargs: Additional arguments passed to the specific backend function
     
     Returns:
-        Visualization object (xyzrender.Scene or plotly.Figure)
+        Visualisation object (xyzrender.SVGResult or plotly.Figure)
     """
     _check_backend_availability()
     
     if backend == 'auto':
         if XYZRENDER_AVAILABLE:
-            return visualize_am_xyzrender(am, show_pores=show_pores, **kwargs)
+            return visualise_am_xyzrender(am, show_pores=show_pores, **kwargs)
         else:
-            return visualize_am_plotly(am, **kwargs)
+            return visualise_am_plotly(am, **kwargs)
     elif backend == 'xyzrender':
         if not XYZRENDER_AVAILABLE:
             raise BackendNotAvailableError(
                 "xyzrender is not available. Please install it: pip install xyzrender"
             )
-        return visualize_am_xyzrender(am, show_pores=show_pores, **kwargs)
+        return visualise_am_xyzrender(am, show_pores=show_pores, **kwargs)
     elif backend == 'plotly':
         if not PLOTLY_AVAILABLE:
             raise BackendNotAvailableError(
                 "plotly is not available. Please install it: pip install plotly"
             )
-        return visualize_am_plotly(am, **kwargs)
+        return visualise_am_plotly(am, **kwargs)
     else:
         raise ValueError(f"Unknown backend: {backend}. Use 'auto', 'xyzrender', or 'plotly'")
 
@@ -947,18 +947,18 @@ def visualize_am(
 # ============================================================================
 
 
-def visualize_with_xyzrender(obj, **kwargs) -> Any:
-    """Visualize any object using xyzrender (preferred backend).
+def visualise_with_xyzrender(obj, **kwargs) -> Any:
+    """Visualise any object using xyzrender (preferred backend).
     
     This function automatically detects the object type and uses the
-    appropriate xyzrender visualization function.
+    appropriate xyzrender visualisation function.
     
     Args:
-        obj: Object to visualize (MOP, CBU, or AM)
-        **kwargs: Additional arguments passed to the specific visualization function
+        obj: Object to visualise (MOP, CBU, or AM)
+        **kwargs: Additional arguments passed to the specific visualisation function
     
     Returns:
-        xyzrender Scene object
+        xyzrender SVGResult object
     
     Raises:
         BackendNotAvailableError: If xyzrender is not available
@@ -967,24 +967,24 @@ def visualize_with_xyzrender(obj, **kwargs) -> Any:
     from twa_mops.core.ontomops import MetalOrganicPolyhedron, ChemicalBuildingUnit, AssemblyModel
     
     if isinstance(obj, MetalOrganicPolyhedron):
-        return visualize_mop_xyzrender(obj, **kwargs)
+        return visualise_mop_xyzrender(obj, **kwargs)
     elif isinstance(obj, ChemicalBuildingUnit):
-        return visualize_cbu_xyzrender(obj, **kwargs)
+        return visualise_cbu_xyzrender(obj, **kwargs)
     elif isinstance(obj, AssemblyModel):
-        return visualize_am_xyzrender(obj, **kwargs)
+        return visualise_am_xyzrender(obj, **kwargs)
     else:
         raise ValueError(f"Unsupported object type: {type(obj)}")
 
 
-def visualize_with_plotly(obj, **kwargs) -> Any:
-    """Visualize any object using Plotly (fallback backend).
+def visualise_with_plotly(obj, **kwargs) -> Any:
+    """Visualise any object using Plotly (fallback backend).
     
     This function automatically detects the object type and uses the
-    appropriate Plotly visualization function.
+    appropriate Plotly visualisation function.
     
     Args:
-        obj: Object to visualize (MOP, CBU, or AM)
-        **kwargs: Additional arguments passed to the specific visualization function
+        obj: Object to visualise (MOP, CBU, or AM)
+        **kwargs: Additional arguments passed to the specific visualisation function
     
     Returns:
         plotly Figure object
@@ -996,11 +996,11 @@ def visualize_with_plotly(obj, **kwargs) -> Any:
     from twa_mops.core.ontomops import MetalOrganicPolyhedron, ChemicalBuildingUnit, AssemblyModel
     
     if isinstance(obj, MetalOrganicPolyhedron):
-        return visualize_mop_plotly(obj, **kwargs)
+        return visualise_mop_plotly(obj, **kwargs)
     elif isinstance(obj, ChemicalBuildingUnit):
-        return visualize_cbu_plotly(obj, **kwargs)
+        return visualise_cbu_plotly(obj, **kwargs)
     elif isinstance(obj, AssemblyModel):
-        return visualize_am_plotly(obj, **kwargs)
+        return visualise_am_plotly(obj, **kwargs)
     else:
         raise ValueError(f"Unsupported object type: {type(obj)}")
 
@@ -1015,20 +1015,20 @@ __all__ = [
     'BackendNotAvailableError',
     'InvalidGeometryError',
     
-    # Main visualization functions
-    'visualize_mop',
-    'visualize_cbu',
-    'visualize_am',
+    # Main visualisation functions
+    'visualise_mop',
+    'visualise_cbu',
+    'visualise_am',
     
     # Backend-specific functions
-    'visualize_mop_xyzrender',
-    'visualize_mop_plotly',
-    'visualize_cbu_xyzrender',
-    'visualize_cbu_plotly',
-    'visualize_am_xyzrender',
-    'visualize_am_plotly',
+    'visualise_mop_xyzrender',
+    'visualise_mop_plotly',
+    'visualise_cbu_xyzrender',
+    'visualise_cbu_plotly',
+    'visualise_am_xyzrender',
+    'visualise_am_plotly',
     
     # Convenience functions
-    'visualize_with_xyzrender',
-    'visualize_with_plotly',
+    'visualise_with_xyzrender',
+    'visualise_with_plotly',
 ]
