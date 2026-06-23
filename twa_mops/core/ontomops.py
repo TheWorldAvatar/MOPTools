@@ -1858,9 +1858,10 @@ class MetalOrganicPolyhedron(CoordinationCage):
         upload_geometry: bool = False,
         data_dir: str = None,
     ):
+        # Import settings at function level for use in error messages
+        from twa_mops.config import settings
         # Use settings.data_dir if not provided
         if data_dir is None:
-            from twa_mops.config import settings
             data_dir = settings.data_dir
         # prepare the variables
         mop_charge = 0
