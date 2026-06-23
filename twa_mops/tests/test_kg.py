@@ -193,5 +193,116 @@ class TestKnowledgeGraphClient:
                 client.push_objects([test_model])
 
 
+class TestInputValidation:
+    """Test suite for input validation in KnowledgeGraphClient."""
+    
+    def test_invalid_endpoint_raises(self):
+        """Test that invalid endpoint raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid SPARQL endpoint"):
+            KnowledgeGraphClient(endpoint="not-a-valid-url")
+    
+    def test_empty_endpoint_raises(self):
+        """Test that empty endpoint raises ValueError."""
+        with pytest.raises(ValueError, match="SPARQL endpoint cannot be empty"):
+            KnowledgeGraphClient(endpoint="")
+    
+    def test_invalid_cache_size_too_small_raises(self):
+        """Test that cache size < 1 raises ValueError."""
+        with pytest.raises(ValueError, match="greater_than_equal"):
+            KnowledgeGraphClient(endpoint="http://test:3838/sparql", max_cache_size=0)
+    
+    def test_invalid_cache_size_too_large_raises(self):
+        """Test that cache size > 10000 raises ValueError."""
+        with pytest.raises(ValueError, match="less_than_equal"):
+            KnowledgeGraphClient(endpoint="http://test:3838/sparql", max_cache_size=10001)
+    
+    def test_invalid_iri_raises(self):
+        """Test that invalid IRI raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="Invalid IRI format"):
+                client.pull_objects(["not-a-valid-iri"])
+    
+    def test_empty_iri_raises(self):
+        """Test that empty IRI raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="IRI cannot be empty"):
+                client.pull_objects([""])
+    
+    def test_invalid_depth_too_small_raises(self):
+        """Test that depth < -1 raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="greater_than_equal"):
+                client.pull_objects(["http://test/iri1"], depth=-2)
+    
+    def test_invalid_depth_too_large_raises(self):
+        """Test that depth > 10 raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="less_than_equal"):
+                client.pull_objects(["http://test/iri1"], depth=11)
+    
+    def test_empty_query_raises(self):
+        """Test that empty query raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="SPARQL query cannot be empty"):
+                client.execute_query("")
+    
+    def test_none_query_raises(self):
+        """Test that None query raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="SPARQL query cannot be empty"):
+                client.execute_query(None)
+    
+    def test_invalid_file_server_url_raises(self):
+        """Test that invalid file server URL raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid file server URL"):
+            KnowledgeGraphClient(
+                endpoint="http://test:3838/sparql",
+                fs_url="invalid-url"
+            )
+    
+    def test_valid_urn_iri(self):
+        """Test that URN format IRIs are accepted."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_instance.perform_query.return_value = []
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            # URN format should be accepted
+            client.pull_objects(["urn:test:iri1"])
+            mock_instance.perform_query.assert_called_once()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

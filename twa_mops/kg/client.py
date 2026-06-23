@@ -5,14 +5,181 @@ the Knowledge Graph using SPARQL queries with batching and caching support.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
-from pydantic import BaseModel
+from pydantic import BaseModel, validator, Field, HttpUrl, conint
 import time
+import re
 
 try:
     from twa.kg_operations import PySparqlClient
 except ImportError:
     PySparqlClient = None
+
+
+# ============================================================================
+# Validation Models
+# ============================================================================
+
+class IRIInput(BaseModel):
+    """Validation model for IRI (Internationalized Resource Identifier) inputs.
+    
+    Validates that the IRI is a valid URL format and is not empty.
+    """
+    iri: str = Field(..., description="The IRI/URL to validate")
+    
+    @validator('iri')
+    def validate_iri(cls, v):
+        """Validate IRI format."""
+        if not v or not v.strip():
+            raise ValueError("IRI cannot be empty or None")
+        v = v.strip()
+        
+        # Check if it's a valid URL format
+        # IRIs should start with http:// or https:// or be a valid URN
+        if not (v.startswith('http://') or v.startswith('https://') or v.startswith('urn:')):
+            raise ValueError(
+                f"Invalid IRI format: '{v}'. "
+                f"IRIs must start with http://, https://, or urn:"
+            )
+        
+        # Additional check for common TWA KG IRI pattern
+        # Example: https://www.theworldavatar.com/kg/ontomops/ChemicalBuildingUnit_...
+        if v.startswith('http'):
+            try:
+                # This will raise an error if the URL is malformed
+                from pydantic import HttpUrl
+                HttpUrl(v)  # This will validate the URL
+            except Exception as e:
+                raise ValueError(f"Invalid URL format for IRI: '{v}'. Error: {e}")
+        
+        return v
+
+
+class IRIsInput(BaseModel):
+    """Validation model for a list of IRIs."""
+    iris: List[str] = Field(..., description="List of IRIs to validate")
+    
+    @validator('iris')
+    def validate_iris_list(cls, v):
+        """Validate list of IRIs."""
+        if not v:
+            return v  # Empty list is allowed
+        
+        validated_iris = []
+        for iri in v:
+            # Use IRIInput validator
+            validated_iris.append(IRIInput(iri=iri).iri)
+        
+        return validated_iris
+
+
+class DepthInput(BaseModel):
+    """Validation model for recursion depth parameter."""
+    depth: int = Field(
+        default=-1,
+        description="Recursion depth for property traversal",
+        ge=-1,
+        le=10
+    )
+    
+    @validator('depth')
+    def validate_depth(cls, v):
+        """Validate depth value.
+        
+        Valid depth values:
+        - -1: infinite recursion
+        - 0: no recursion (returns only direct properties as IRIs)
+        - 1+: n-level recursion
+        
+        We limit to 10 to prevent accidentally excessive recursion.
+        """
+        if v < -1:
+            raise ValueError(f"Depth must be >= -1, got {v}")
+        if v > 10:
+            raise ValueError(
+                f"Depth of {v} is too large. Maximum allowed is 10. "
+                f"For assembly, depth=3 or depth=-1 is recommended."
+            )
+        return v
+
+
+class EndpointInput(BaseModel):
+    """Validation model for SPARQL endpoint URL."""
+    endpoint: str = Field(..., description="SPARQL endpoint URL")
+    
+    @validator('endpoint')
+    def validate_endpoint(cls, v):
+        """Validate SPARQL endpoint URL."""
+        if not v or not v.strip():
+            raise ValueError("SPARQL endpoint cannot be empty")
+        v = v.strip()
+        
+        # Must be a valid HTTP/HTTPS URL
+        if not (v.startswith('http://') or v.startswith('https://')):
+            raise ValueError(
+                f"Invalid SPARQL endpoint: '{v}'. "
+                f"Must start with http:// or https://"
+            )
+        
+        # Should end with /sparql or contain /sparql
+        if '/sparql' not in v:
+            # It's valid but might not be a SPARQL endpoint - just warn via description
+            pass
+        
+        return v
+
+
+class CacheSizeInput(BaseModel):
+    """Validation model for cache size parameter."""
+    max_cache_size: int = Field(
+        default=128,
+        description="Maximum number of objects to cache",
+        ge=1,
+        le=10000
+    )
+    
+    @validator('max_cache_size')
+    def validate_cache_size(cls, v):
+        """Validate cache size."""
+        if v < 1:
+            raise ValueError(f"Cache size must be at least 1, got {v}")
+        if v > 10000:
+            raise ValueError(
+                f"Cache size of {v} is too large. "
+                f"Maximum allowed is 10000 to prevent excessive memory usage."
+            )
+        return v
+
+
+class FilePathInput(BaseModel):
+    """Validation model for file paths."""
+    path: str = Field(..., description="File path to validate")
+    
+    @validator('path')
+    def validate_path(cls, v):
+        """Validate file path is not empty."""
+        if not v or not v.strip():
+            raise ValueError("File path cannot be empty")
+        return v.strip()
+
+
+class FilePathExistsInput(FilePathInput):
+    """Validation model for file paths that must exist."""
+    path: str = Field(..., description="File path that must exist")
+    
+    @validator('path')
+    def validate_path_exists(cls, v):
+        """Validate file path exists."""
+        v = super().validate_path(v)
+        
+        path_obj = Path(v)
+        if not path_obj.exists():
+            raise ValueError(f"File does not exist: {v}")
+        if not path_obj.is_file():
+            raise ValueError(f"Path is not a file: {v}")
+        
+        return v
 
 
 class KnowledgeGraphClient:
@@ -62,6 +229,10 @@ class KnowledgeGraphClient:
             fs_user: Alias for fs_username (for backward compatibility)
             fs_pwd: Alias for fs_password (for backward compatibility)
             enable_performance_timing: Enable timing metrics for queries (default: False)
+        
+        Raises:
+            ImportError: If PySparqlClient is not available
+            ValueError: If endpoint or max_cache_size validation fails
         """
         if PySparqlClient is None:
             raise ImportError(
@@ -69,8 +240,12 @@ class KnowledgeGraphClient:
                 "Please install the twa package."
             )
         
-        self.endpoint = endpoint
-        self.max_cache_size = max_cache_size
+        # Validate inputs using Pydantic models
+        validated_endpoint = EndpointInput(endpoint=endpoint).endpoint
+        validated_cache_size = CacheSizeInput(max_cache_size=max_cache_size).max_cache_size
+        
+        self.endpoint = validated_endpoint
+        self.max_cache_size = validated_cache_size
         self.enable_performance_timing = enable_performance_timing
         self._last_query_time = 0
         self._total_query_time = 0
@@ -83,10 +258,17 @@ class KnowledgeGraphClient:
         self.fs_username = fs_username or fs_user
         self.fs_password = fs_password or fs_pwd
         
+        # Validate file server URL if provided
+        if self.fs_url and not (self.fs_url.startswith('http://') or self.fs_url.startswith('https://')):
+            raise ValueError(
+                f"Invalid file server URL: '{self.fs_url}'. "
+                f"Must start with http:// or https://"
+            )
+        
         # Initialize the SPARQL client
         self.sparql_client = PySparqlClient(
-            query_endpoint=endpoint,
-            update_endpoint=endpoint,
+            query_endpoint=validated_endpoint,
+            update_endpoint=validated_endpoint,
             kg_user=self.username,
             kg_password=self.password,
             fs_url=fs_url,
@@ -112,15 +294,26 @@ class KnowledgeGraphClient:
         
         Returns:
             List of dictionaries containing the pulled object data
+        
+        Raises:
+            ValueError: If iris validation fails or depth is invalid
         """
-        if not iris:
+        # Validate inputs
+        if iris:
+            validated_iris = IRIsInput(iris=iris).iris
+        else:
+            validated_iris = []
+        
+        validated_depth = DepthInput(depth=depth).depth
+        
+        if not validated_iris:
             return []
         
         # Convert to tuple for caching
-        iris_tuple = tuple(sorted(iris))
+        iris_tuple = tuple(sorted(validated_iris))
         
         # Use cached internal method
-        return self._pull_objects_cached(iris_tuple, depth)
+        return self._pull_objects_cached(iris_tuple, validated_depth)
     
     @lru_cache(maxsize=128)
     def _pull_objects_cached(
@@ -165,8 +358,12 @@ class KnowledgeGraphClient:
         
         Returns:
             List of dictionaries containing the pulled object data
+        
+        Raises:
+            ValueError: If iri is invalid
         """
-        return self.pull_objects([iri], depth=depth)
+        validated_iri = IRIInput(iri=iri).iri
+        return self.pull_objects([validated_iri], depth=depth)
     
     def pull_for_assembly(
         self,
@@ -197,6 +394,9 @@ class KnowledgeGraphClient:
         Returns:
             Tuple of (AssemblyModel instance, list of ChemicalBuildingUnit instances)
         
+        Raises:
+            ValueError: If am_iri or any cbu_iris are invalid
+        
         Example:
             # Full assembly with depth=-1 (recommended for reliability)
             am, cbus = kg_client.pull_for_assembly(am_iri, [cbu1_iri, cbu2_iri])
@@ -207,14 +407,35 @@ class KnowledgeGraphClient:
             # Faster with depth=3 (if your data structure is shallow)
             am, cbus = kg_client.pull_for_assembly(am_iri, [cbu1_iri, cbu2_iri], depth=3)
         """
+        # Validate inputs
+        validated_am_iri = IRIInput(iri=am_iri).iri
+        
+        if cbu_iris:
+            validated_cbu_iris = IRIsInput(iris=cbu_iris).iris
+        else:
+            validated_cbu_iris = []
+        
+        validated_depth = DepthInput(depth=depth).depth
+        
+        # Warn if depth is too shallow for assembly
+        if validated_depth < 3 and validated_depth != -1:
+            import warnings
+            warnings.warn(
+                f"Depth={validated_depth} may be too shallow for MOP assembly. "
+                f"Properties may be returned as IRIs instead of objects, causing failures. "
+                f"For assembly, use depth=3 or depth=-1.",
+                UserWarning,
+                stacklevel=2
+            )
+        
         from twa.data_model.base_ontology import BaseClass
         from twa_mops.core.ontomops import AssemblyModel, ChemicalBuildingUnit
         
         # Pull the AM first to get its class
-        am = AssemblyModel.pull_from_kg([am_iri], self.sparql_client, recursive_depth=depth)[0]
+        am = AssemblyModel.pull_from_kg([validated_am_iri], self.sparql_client, recursive_depth=validated_depth)[0]
         
         # Pull CBUs
-        cbus = ChemicalBuildingUnit.pull_from_kg(cbu_iris, self.sparql_client, recursive_depth=depth)
+        cbus = ChemicalBuildingUnit.pull_from_kg(validated_cbu_iris, self.sparql_client, recursive_depth=validated_depth)
         
         return am, cbus
     
@@ -239,9 +460,13 @@ class KnowledgeGraphClient:
             removed and added during the push operation
         
         Raises:
-            ValueError: If objects list is empty
+            ValueError: If objects list is empty or depth is invalid
+            TypeError: If objects contains non-BaseClass instances
             Exception: If push operation fails
         """
+        # Validate depth
+        validated_depth = DepthInput(depth=depth).depth
+        
         if not objects:
             raise ValueError("No objects to push")
         
@@ -255,7 +480,7 @@ class KnowledgeGraphClient:
             # Check if object has _collect_diff_to_graph method (from BaseClass)
             if hasattr(obj, '_collect_diff_to_graph'):
                 obj_g_to_remove, obj_g_to_add = obj._collect_diff_to_graph(
-                    g_to_remove, g_to_add, depth
+                    g_to_remove, g_to_add, validated_depth
                 )
                 g_to_remove += obj_g_to_remove
                 g_to_add += obj_g_to_add
@@ -342,8 +567,14 @@ class KnowledgeGraphClient:
         
         Returns:
             The query results
+        
+        Raises:
+            ValueError: If query is empty or None
         """
-        return self.sparql_client.perform_query(query)
+        if not query or not query.strip():
+            raise ValueError("SPARQL query cannot be empty or None")
+        
+        return self.sparql_client.perform_query(query.strip())
     
     def upload_graph(
         self,
@@ -372,8 +603,14 @@ class KnowledgeGraphClient:
         
         Returns:
             True if download was successful
+        
+        Raises:
+            ValueError: If remote_path or local_path is invalid
         """
-        return self.sparql_client.download_file(remote_path, local_path)
+        validated_remote = FilePathInput(path=remote_path).path
+        validated_local = FilePathInput(path=local_path).path
+        
+        return self.sparql_client.download_file(validated_remote, validated_local)
     
     def upload_file(
         self,
@@ -386,8 +623,12 @@ class KnowledgeGraphClient:
         
         Returns:
             Tuple of (remote_path, timestamp)
+        
+        Raises:
+            ValueError: If local_path is invalid or file doesn't exist
         """
-        return self.sparql_client.upload_file(local_path)
+        validated_local = FilePathExistsInput(path=local_path).path
+        return self.sparql_client.upload_file(validated_local)
     
     def perform_query(self, query: str) -> Any:
         """Alias for execute_query to match PySparqlClient interface.
@@ -397,6 +638,9 @@ class KnowledgeGraphClient:
         
         Returns:
             The query results
+        
+        Raises:
+            ValueError: If query is empty or None
         """
         return self.execute_query(query)
     
@@ -445,15 +689,24 @@ class KnowledgeGraphClient:
         
         Returns:
             List of class instances
+        
+        Raises:
+            TypeError: If cls is not a BaseClass subclass
+            ValueError: If iris validation fails or depth is invalid
         """
         # Import here to avoid circular imports
         from twa.data_model.base_ontology import BaseClass
         
+        # Validate class type
         if not isinstance(cls, type) or not issubclass(cls, BaseClass):
             raise TypeError(f"cls must be a BaseClass subclass, got {type(cls)}")
         
+        # Validate IRIs and depth
+        validated_iris = IRIsInput(iris=iris).iris if iris else []
+        validated_depth = DepthInput(depth=depth).depth
+        
         # Use pull_from_kg which handles the conversion from RDF results to class instances
-        return cls.pull_from_kg(iris, self.sparql_client, recursive_depth=depth)
+        return cls.pull_from_kg(validated_iris, self.sparql_client, recursive_depth=validated_depth)
     
     def pull_instances_fast(
         self,
@@ -474,6 +727,10 @@ class KnowledgeGraphClient:
         
         Returns:
             List of class instances
+        
+        Raises:
+            TypeError: If cls is not a BaseClass subclass
+            ValueError: If iris validation fails or depth is invalid
         
         Example:
             # Fast pull for assembly (doesn't load nested geometry)
