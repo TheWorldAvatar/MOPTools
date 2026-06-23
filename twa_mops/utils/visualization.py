@@ -352,9 +352,9 @@ def visualize_mop_xyzrender(
     # Create Molecule from graph
     mol = xyzrender.Molecule(graph=G)
     
-    # In Jupyter notebook, returning the Molecule will automatically display it
-    # In other environments, users can call xyzrender.render(mol)
-    return mol
+    # Render the molecule - in Jupyter this will display inline via SVGResult._repr_svg_()
+    # In non-Jupyter environments, this returns an SVGResult that can be saved or displayed
+    return xyzrender.render(mol, **kwargs)
 
 
 def visualize_mop_plotly(
@@ -551,7 +551,8 @@ def visualize_cbu_xyzrender(
     # Create Molecule from graph
     mol = xyzrender.Molecule(graph=G)
     
-    return mol
+    # Render the molecule - in Jupyter this will display inline via SVGResult._repr_svg_()
+    return xyzrender.render(mol, **kwargs)
 
 
 def visualize_cbu_plotly(
@@ -728,7 +729,8 @@ def visualize_am_xyzrender(
     # Create Molecule from graph
     mol = xyzrender.Molecule(graph=G)
     
-    return mol
+    # Render the molecule - in Jupyter this will display inline via SVGResult._repr_svg_()
+    return xyzrender.render(mol, **kwargs)
 
 
 def visualize_am_plotly(
