@@ -27,6 +27,10 @@ setup(
     packages=find_packages(where=".", include=["twa_mops*"]),
     python_requires=">=3.8, <3.13",
     install_requires=requirements,
+    extras_require={
+        "xyzrender": ["xyzrender>=0.3.0"],
+        "all": ["xyzrender>=0.3.0"],
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",
