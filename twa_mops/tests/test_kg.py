@@ -175,8 +175,9 @@ class TestKnowledgeGraphClient:
                 client.push_objects([])
     
     def test_push_objects_with_pydantic_models_raises(self):
-        """Test that push_objects raises NotImplementedError for Pydantic models."""
+        """Test that push_objects raises InvalidObjectError for Pydantic models."""
         from pydantic import BaseModel
+        from kg.client import InvalidObjectError
         
         class TestModel(BaseModel):
             name: str
@@ -189,7 +190,7 @@ class TestKnowledgeGraphClient:
             
             test_model = TestModel(name="test")
             
-            with pytest.raises(NotImplementedError, match="Pydantic models is not yet implemented"):
+            with pytest.raises(InvalidObjectError, match="Pydantic models is not yet implemented"):
                 client.push_objects([test_model])
 
 
@@ -237,6 +238,86 @@ class TestInputValidation:
             
             with pytest.raises(ValueError, match="IRI cannot be empty"):
                 client.pull_objects([""])
+    
+    def test_pull_for_assembly_warns_on_shallow_depth(self):
+        """Test that pull_for_assembly warns when depth < 3."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            # Create mock objects
+            mock_am = Mock()
+            mock_am.instance_iri = "http://test/am1"
+            mock_cbu = Mock()
+            mock_cbu.instance_iri = "http://test/cbu1"
+            
+            # Mock the pull_from_kg to return mock objects
+            with patch('twa_mops.core.ontomops.AssemblyModel.pull_from_kg') as mock_am_pull, \
+                 patch('twa_mops.core.ontomops.ChemicalBuildingUnit.pull_from_kg') as mock_cbu_pull:
+                mock_am_pull.return_value = [mock_am]
+                mock_cbu_pull.return_value = [mock_cbu]
+                
+                # This should trigger a warning but not raise an error
+                with pytest.warns(UserWarning, match="Depth=2 may be too shallow"):
+                    am, cbus = client.pull_for_assembly("http://test/am1", ["http://test/cbu1"], depth=2)
+                    assert am == mock_am
+                    assert cbus == [mock_cbu]
+    
+    def test_invalid_batch_size_raises(self):
+        """Test that invalid batch_size raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="batch_size must be a positive integer"):
+                client.pull_for_assembly("http://test/am1", ["http://test/cbu1"], batch_size=0)
+            
+            with pytest.raises(ValueError, match="batch_size must be a positive integer"):
+                client.pull_for_assembly("http://test/am1", ["http://test/cbu1"], batch_size=-5)
+    
+    def test_invalid_max_retries_raises(self):
+        """Test that invalid max_retries raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="max_retries must be a non-negative integer"):
+                client.push_objects([Mock()], max_retries=-1)
+            
+            with pytest.raises(ValueError, match="max_retries must be a non-negative integer"):
+                client.download_file("remote.txt", "local.txt", max_retries=-1)
+    
+    def test_invalid_retry_delay_raises(self):
+        """Test that invalid retry_delay raises ValueError."""
+        with patch('kg.client.PySparqlClient') as mock_sparql:
+            mock_instance = Mock()
+            mock_sparql.return_value = mock_instance
+            
+            client = KnowledgeGraphClient(endpoint="http://test:3838/sparql")
+            
+            with pytest.raises(ValueError, match="retry_delay must be a non-negative number"):
+                client.download_file("remote.txt", "local.txt", retry_delay=-1)
+    
+    def test_custom_exceptions_available(self):
+        """Test that custom exceptions are importable from kg module."""
+        from kg.client import (
+            KnowledgeGraphError,
+            QueryError,
+            ObjectNotFoundError,
+            InvalidObjectError
+        )
+        
+        # Verify they are proper exceptions
+        assert issubclass(KnowledgeGraphError, Exception)
+        assert issubclass(QueryError, KnowledgeGraphError)
+        assert issubclass(ObjectNotFoundError, KnowledgeGraphError)
+        assert issubclass(InvalidObjectError, KnowledgeGraphError)
     
     def test_invalid_depth_too_small_raises(self):
         """Test that depth < -1 raises ValueError."""

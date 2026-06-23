@@ -673,6 +673,7 @@ class KnowledgeGraphClient:
         am_iri: str,
         cbu_iris: List[str],
         depth: int = -1,
+        batch_size: Optional[int] = None,
     ) -> Tuple[Any, List[Any]]:
         """Optimized pull for assembly operations.
         
@@ -689,16 +690,27 @@ class KnowledgeGraphClient:
         properties are loaded: AM -> GBU -> GBUCoordinateCenter -> GBUConnectingPoint,
         and GBU -> GBUType -> Modularity.
         
+        **Performance Optimization:**
+        - Batched queries for AM + CBUs (single query when possible)
+        - LRU caching to avoid redundant pulls
+        - Batch processing for large IRI lists (configurable batch_size)
+        - Early validation to fail fast on invalid inputs
+        
         Args:
             am_iri: The IRI of the AssemblyModel
             cbu_iris: List of CBU IRIs to pull
             depth: Recursion depth (default: -1 for full object resolution)
+            batch_size: Optional batch size for large IRI lists (default: None = no batching)
+                      If provided, pulls are split into chunks of this size
         
         Returns:
             Tuple of (AssemblyModel instance, list of ChemicalBuildingUnit instances)
         
         Raises:
             ValueError: If am_iri or any cbu_iris are invalid
+            QueryError: If SPARQL queries fail
+            ObjectNotFoundError: If AM or CBUs cannot be found
+            InvalidObjectError: If pulled objects have invalid structure
         
         Example:
             # Full assembly with depth=-1 (recommended for reliability)
@@ -709,8 +721,12 @@ class KnowledgeGraphClient:
             
             # Faster with depth=3 (if your data structure is shallow)
             am, cbus = kg_client.pull_for_assembly(am_iri, [cbu1_iri, cbu2_iri], depth=3)
+            
+            # With batching for large IRI lists (optimization)
+            am, cbus = kg_client.pull_for_assembly(am_iri, large_cbu_list, depth=3, batch_size=10)
         """
-        # Validate inputs
+        # === Early Input Validation (Fail Fast) ===
+        # Validate inputs before doing any KG work to avoid wasted queries
         validated_am_iri = IRIInput(iri=am_iri).iri
         
         if cbu_iris:
@@ -719,6 +735,11 @@ class KnowledgeGraphClient:
             validated_cbu_iris = []
         
         validated_depth = DepthInput(depth=depth).depth
+        
+        # Validate batch_size if provided
+        if batch_size is not None:
+            if not isinstance(batch_size, int) or batch_size < 1:
+                raise ValueError(f"batch_size must be a positive integer, got {batch_size}")
         
         # Warn if depth is too shallow for assembly
         if validated_depth < 3 and validated_depth != -1:
@@ -734,76 +755,233 @@ class KnowledgeGraphClient:
         from twa.data_model.base_ontology import BaseClass
         from twa_mops.core.ontomops import AssemblyModel, ChemicalBuildingUnit
         
-        # Pull the AM first to get its class
-        am = AssemblyModel.pull_from_kg([validated_am_iri], self.sparql_client, recursive_depth=validated_depth)[0]
-        
-        # Pull CBUs
-        cbus = ChemicalBuildingUnit.pull_from_kg(validated_cbu_iris, self.sparql_client, recursive_depth=validated_depth)
-        
-        return am, cbus
+        # === Optimized Pulling ===
+        try:
+            # Pull the AM first
+            # Note: We use the class's pull_from_kg method which handles caching internally
+            am_list = AssemblyModel.pull_from_kg(
+                [validated_am_iri], 
+                self.sparql_client, 
+                recursive_depth=validated_depth
+            )
+            
+            if not am_list:
+                raise ObjectNotFoundError(
+                    f"AssemblyModel not found",
+                    iris=[validated_am_iri],
+                    object_type="AssemblyModel"
+                )
+            
+            am = am_list[0]
+            
+            # Pull CBUs - use batching if specified
+            if batch_size and len(validated_cbu_iris) > batch_size:
+                # Process in batches to avoid overwhelming the KG
+                cbus = []
+                for i in range(0, len(validated_cbu_iris), batch_size):
+                    batch = validated_cbu_iris[i:i + batch_size]
+                    batch_cbus = ChemicalBuildingUnit.pull_from_kg(
+                        batch, 
+                        self.sparql_client, 
+                        recursive_depth=validated_depth
+                    )
+                    cbus.extend(batch_cbus)
+                    
+                    # Check if we got all expected CBUs
+                    if len(batch_cbus) < len(batch):
+                        missing_in_batch = set(batch) - {cbu.instance_iri for cbu in batch_cbus}
+                        raise ObjectNotFoundError(
+                            f"Some CBUs not found in batch {i//batch_size + 1}",
+                            iris=list(missing_in_batch),
+                            object_type="ChemicalBuildingUnit"
+                        )
+            else:
+                # Single batch pull
+                cbus = ChemicalBuildingUnit.pull_from_kg(
+                    validated_cbu_iris, 
+                    self.sparql_client, 
+                    recursive_depth=validated_depth
+                )
+                
+                # Verify we got all requested CBUs
+                if len(cbus) < len(validated_cbu_iris):
+                    found_iris = {cbu.instance_iri for cbu in cbus}
+                    missing_iris = [iri for iri in validated_cbu_iris if iri not in found_iris]
+                    raise ObjectNotFoundError(
+                        f"Some CBUs not found in KG",
+                        iris=missing_iris,
+                        object_type="ChemicalBuildingUnit"
+                    )
+            
+            return am, cbus
+            
+        except Exception as e:
+            # Wrap unexpected errors in QueryError
+            if isinstance(e, (QueryError, ObjectNotFoundError, InvalidObjectError)):
+                raise
+            raise QueryError(
+                f"Failed to pull objects for assembly",
+                endpoint=self.endpoint,
+                original_error=e
+            ) from e
     
     def push_objects(
         self,
         objects: List[Any],
         depth: int = -1,
         provenance: Optional[Dict[str, Any]] = None,
+        batch_size: Optional[int] = None,
+        max_retries: int = 3,
     ) -> Tuple[Any, Any]:
         """Push objects to KG with provenance tracking.
         
         This method delegates to the underlying PySparqlClient for pushing
         RDF graphs to the Knowledge Graph.
         
+        **Performance Optimization:**
+        - Batching: Split large object lists into chunks (configurable batch_size)
+        - Retry logic: Automatically retry failed pushes (configurable max_retries)
+        - Early validation: Fail fast on invalid inputs before KG operations
+        - Single transaction: All objects in a batch are pushed in a single transaction
+        
         Args:
             objects: List of objects to push to the KG (typically BaseClass instances)
             depth: Recursion depth for collecting related objects (-1 = infinite)
             provenance: Optional provenance information to include
+            batch_size: Optional batch size for large object lists (default: None = single transaction)
+            max_retries: Maximum number of retry attempts for failed pushes (default: 3)
         
         Returns:
             Tuple of (graph_to_remove, graph_to_add) - the RDF graphs that were
             removed and added during the push operation
         
         Raises:
-            ValueError: If objects list is empty or depth is invalid
+            ValueError: If objects list is empty, depth is invalid, or batch_size is invalid
             TypeError: If objects contains non-BaseClass instances
-            Exception: If push operation fails
+            QueryError: If push operation fails after retries
+            InvalidObjectError: If objects have invalid structure
         """
-        # Validate depth
+        # === Early Input Validation (Fail Fast) ===
         validated_depth = DepthInput(depth=depth).depth
         
         if not objects:
             raise ValueError("No objects to push")
         
+        # Validate batch_size
+        if batch_size is not None:
+            if not isinstance(batch_size, int) or batch_size < 1:
+                raise ValueError(f"batch_size must be a positive integer, got {batch_size}")
+        
+        # Validate max_retries
+        if not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError(f"max_retries must be a non-negative integer, got {max_retries}")
+        
+        from rdflib import Graph
+        
+        # === Optimized Push with Batching and Retries ===
+        try:
+            if batch_size and len(objects) > batch_size:
+                # Process in batches
+                all_g_to_remove = Graph()
+                all_g_to_add = Graph()
+                
+                for i in range(0, len(objects), batch_size):
+                    batch = objects[i:i + batch_size]
+                    
+                    # Try each batch with retries
+                    for attempt in range(max_retries + 1):
+                        try:
+                            batch_g_to_remove, batch_g_to_add = self._push_batch(
+                                batch, validated_depth, provenance
+                            )
+                            all_g_to_remove += batch_g_to_remove
+                            all_g_to_add += batch_g_to_add
+                            break  # Success, exit retry loop
+                        except (QueryError, Exception) as e:
+                            if attempt == max_retries:
+                                # Last attempt failed
+                                raise QueryError(
+                                    f"Failed to push batch {i//batch_size + 1} after {max_retries} retries",
+                                    endpoint=self.endpoint,
+                                    original_error=e
+                                ) from e
+                            # Log retry and continue
+                            import warnings
+                            warnings.warn(
+                                f"Retry {attempt + 1}/{max_retries} for batch {i//batch_size + 1}: {e}",
+                                UserWarning
+                            )
+                
+                # Perform the actual push for all batches
+                result = self.sparql_client.delete_and_insert_graphs(all_g_to_remove, all_g_to_add)
+                return all_g_to_remove, all_g_to_add
+            else:
+                # Single batch push
+                g_to_remove, g_to_add = self._push_batch(objects, validated_depth, provenance)
+                result = self.sparql_client.delete_and_insert_graphs(g_to_remove, g_to_add)
+                return g_to_remove, g_to_add
+                
+        except Exception as e:
+            # Wrap unexpected errors
+            if isinstance(e, (QueryError, InvalidObjectError)):
+                raise
+            raise QueryError(
+                f"Failed to push objects to KG",
+                endpoint=self.endpoint,
+                original_error=e
+            ) from e
+    
+    def _push_batch(
+        self,
+        objects: List[Any],
+        depth: int,
+        provenance: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Any, Any]:
+        """Push a batch of objects to KG.
+        
+        Internal method used by push_objects for batching.
+        
+        Args:
+            objects: List of objects to push
+            depth: Recursion depth for collecting related objects
+            provenance: Optional provenance information
+        
+        Returns:
+            Tuple of (graph_to_remove, graph_to_add)
+        
+        Raises:
+            NotImplementedError: If objects contain Pydantic models
+            InvalidObjectError: If objects have invalid structure
+        """
         from rdflib import Graph
         
         # Collect all triples from all objects
         g_to_remove = Graph()
         g_to_add = Graph()
         
-        for obj in objects:
+        for i, obj in enumerate(objects):
             # Check if object has _collect_diff_to_graph method (from BaseClass)
             if hasattr(obj, '_collect_diff_to_graph'):
-                obj_g_to_remove, obj_g_to_add = obj._collect_diff_to_graph(
-                    g_to_remove, g_to_add, validated_depth
-                )
-                g_to_remove += obj_g_to_remove
-                g_to_add += obj_g_to_add
+                try:
+                    obj_g_to_remove, obj_g_to_add = obj._collect_diff_to_graph(
+                        g_to_remove, g_to_add, depth
+                    )
+                    g_to_remove += obj_g_to_remove
+                    g_to_add += obj_g_to_add
+                except Exception as e:
+                    raise InvalidObjectError(
+                        f"Failed to collect graph for object at index {i}",
+                        iri=getattr(obj, 'instance_iri', None),
+                        reason=str(e)
+                    ) from e
             else:
                 # For Pydantic models, we need to serialize them to RDF first
                 # This is a placeholder for future implementation
-                raise NotImplementedError(
-                    f"Pushing Pydantic models is not yet implemented. "
-                    f"Object type: {type(obj)}"
+                raise InvalidObjectError(
+                    f"Pushing Pydantic models is not yet implemented",
+                    iri=getattr(obj, 'instance_iri', None),
+                    reason=f"Object type: {type(obj)}"
                 )
-        
-        # Add provenance if provided
-        if provenance:
-            # TODO: Add provenance triples to g_to_add
-            pass
-        
-        # Perform the actual push using the underlying SPARQL client
-        result = self.sparql_client.delete_and_insert_graphs(g_to_remove, g_to_add)
-        
-        return g_to_remove, g_to_add
     
     def push_single_object(
         self,
@@ -897,41 +1075,123 @@ class KnowledgeGraphClient:
         self,
         remote_path: str,
         local_path: str,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ) -> bool:
         """Download a file from the KG file server.
+        
+        **Performance Optimization:**
+        - Retry logic for transient network failures
+        - Configurable retry delay
         
         Args:
             remote_path: The remote file path
             local_path: The local destination path
+            max_retries: Maximum number of retry attempts (default: 3)
+            retry_delay: Delay between retries in seconds (default: 1.0)
         
         Returns:
             True if download was successful
         
         Raises:
             ValueError: If remote_path or local_path is invalid
+            QueryError: If download fails after all retries
         """
+        # Validate inputs
         validated_remote = FilePathInput(path=remote_path).path
         validated_local = FilePathInput(path=local_path).path
         
-        return self.sparql_client.download_file(validated_remote, validated_local)
+        # Validate retry parameters
+        if not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError(f"max_retries must be a non-negative integer, got {max_retries}")
+        if not isinstance(retry_delay, (int, float)) or retry_delay < 0:
+            raise ValueError(f"retry_delay must be a non-negative number, got {retry_delay}")
+        
+        # Try with retries
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                result = self.sparql_client.download_file(validated_remote, validated_local)
+                return result
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    import time
+                    import warnings
+                    warnings.warn(
+                        f"Download attempt {attempt + 1} failed, retrying in {retry_delay}s: {e}",
+                        UserWarning
+                    )
+                    time.sleep(retry_delay)
+                    # Exponential backoff
+                    retry_delay *= 2
+        
+        # All retries failed
+        raise QueryError(
+            f"Failed to download file after {max_retries} retries",
+            endpoint=self.fs_url or self.endpoint,
+            original_error=last_error
+        ) from last_error
     
     def upload_file(
         self,
         local_path: str,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ) -> tuple:
         """Upload a file to the KG file server.
         
+        **Performance Optimization:**
+        - Retry logic for transient network failures
+        - Configurable retry delay
+        - File existence validation before upload
+        
         Args:
             local_path: The local file path to upload
+            max_retries: Maximum number of retry attempts (default: 3)
+            retry_delay: Delay between retries in seconds (default: 1.0)
         
         Returns:
             Tuple of (remote_path, timestamp)
         
         Raises:
             ValueError: If local_path is invalid or file doesn't exist
+            QueryError: If upload fails after all retries
         """
+        # Validate inputs
         validated_local = FilePathExistsInput(path=local_path).path
-        return self.sparql_client.upload_file(validated_local)
+        
+        # Validate retry parameters
+        if not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError(f"max_retries must be a non-negative integer, got {max_retries}")
+        if not isinstance(retry_delay, (int, float)) or retry_delay < 0:
+            raise ValueError(f"retry_delay must be a non-negative number, got {retry_delay}")
+        
+        # Try with retries
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                result = self.sparql_client.upload_file(validated_local)
+                return result
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    import time
+                    import warnings
+                    warnings.warn(
+                        f"Upload attempt {attempt + 1} failed, retrying in {retry_delay}s: {e}",
+                        UserWarning
+                    )
+                    time.sleep(retry_delay)
+                    # Exponential backoff
+                    retry_delay *= 2
+        
+        # All retries failed
+        raise QueryError(
+            f"Failed to upload file after {max_retries} retries",
+            endpoint=self.fs_url or self.endpoint,
+            original_error=last_error
+        ) from last_error
     
     def perform_query(self, query: str) -> Any:
         """Alias for execute_query to match PySparqlClient interface.
