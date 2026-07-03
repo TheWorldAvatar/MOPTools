@@ -90,6 +90,8 @@ TranslationVectorToAlignOrigin = DatatypeProperty.create_from_base('TranslationV
 # for pore ring
 HasProbingVector = DatatypeProperty.create_from_base('HasProbingVector', OntoMOPs)
 
+# for ordering binding/connecting points within GBU/CBU
+HasOrder = DatatypeProperty.create_from_base("HasOrder", OntoMOPs)
 
 # classes
 class MolecularCage(BaseClass):
@@ -187,6 +189,13 @@ class AssemblyModel(BaseClass):
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
     hasPoreRing: Optional[HasPoreRing[PoreRing]] = None
 
+    @property
+    def ordered_coordinate_center(self)-> list[GBUCoordinateCenter]:
+        return sorted(
+            list(self.hasGBUCoordinateCenter),
+            key=lambda cc:list(cc.hasOrder)[0]
+        )
+
     def visualise(self):
         rows = []
         for gbu in self.hasGenericBuildingUnit:
@@ -261,14 +270,19 @@ class AssemblyModel(BaseClass):
 
         # handle position blocks `{"Label": "5-pyramidal", ...}`
         # TODO the part that getting the gbu_type_1 and gbu_type_2 can be optimised
+        center_order = 0
         for i in range(len(am_json)):
             if am_json[i]['Label'] in [gbu_type_1_label, gbu_type_2_label]:
                 coord = GBUCoordinateCenter(
                     hasX=am_json[i]['X'],
                     hasY=am_json[i]['Y'],
                     hasZ=am_json[i]['Z'],
-                    hasGBUConnectingPoint=[connecting_point_dict[d] for d in am_json[i]['ClosestDummies']] # gbu_type_label=am_json[i]['Label']
+                    hasGBUConnectingPoint=[
+                        connecting_point_dict[d] for d in am_json[i]['ClosestDummies']
+                    ], # gbu_type_label=am_json[i]['Label']
+                    hasOrder=center_order
                 )
+                center_order+=1
                 if am_json[i]['Label'] in coordinate_point_dict:
                     coordinate_point_dict[am_json[i]['Label']].append(coord)
                 else:
@@ -327,11 +341,10 @@ class AssemblyModel(BaseClass):
 
     @property
     def pairs_of_connected_gbus(self) -> Dict:
-        # sort so always use the same when calculating the scaling factor since otherwise in cases where not equal will get varying scaling factor
         pairs = {}
-        for cc in sorted(self.hasGBUCoordinateCenter, key=lambda x: x.instance_iri):
+        for cc in self.ordered_coordinate_center:
             cc: GBUCoordinateCenter
-            cps = sorted(list(cc.hasGBUConnectingPoint), key=lambda x: x.instance_iri)
+            cps = cc.ordered_connecting_points
             for cp in cps:
                 if cp.instance_iri not in pairs:
                     pairs[cp.instance_iri] = [cc]
@@ -364,6 +377,7 @@ class BindingSite(BaseClass):
     hasBindingPoint: HasBindingPoint[BindingPoint]
     hasBindingFragment: HasBindingFragment[str]
     temporarily_blocked: Optional[bool] = False
+    hasOrder: Optional[HasOrder[int]] = None
 
     @property
     def binding_coordinates(self) -> Point:
@@ -505,11 +519,12 @@ DIRECT_BINDING = DirectBinding(
 )
 
 class GBUConnectingPoint(CoordinatePoint):
-    pass
+    hasOrder: Optional[HasOrder[int]] = None
 
 class GBUCoordinateCenter(CoordinatePoint):
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
     hasGBUType: Optional[HasGBUType[GenericBuildingUnitType]] = None
+    hasOrder: Optional[HasOrder[int]] = None
 
     @property
     def vector_from_am_center(self) -> Vector:
@@ -521,6 +536,14 @@ class GBUCoordinateCenter(CoordinatePoint):
         return self.coordinates.get_distance_to(Point(x=0, y=0, z=0))
     
     @property
+    def ordered_connecting_points(self) -> list[GBUConnectingPoint]:
+        return sorted(
+            list(self.hasGBUConnectingPoint),
+            key=lambda cp: list(cp.hasOrder)[0] if cp.hasOrder else 0
+        )
+
+    
+    @property
     def vector_to_connecting_point_plane(self):
         """
         Normal vector for the connecting-point geometry.
@@ -529,8 +552,7 @@ class GBUCoordinateCenter(CoordinatePoint):
         """
         gbu_type = list(self.hasGBUType)[0].label if self.hasGBUType else ""
 
-        _cps = sorted(list(self.hasGBUConnectingPoint), key=lambda x: x.coordinates.x)
-        connecting_points = [p.coordinates for p in _cps]
+        connecting_points = [p.coordinates for p in self.ordered_connecting_points]
 
         if len(connecting_points) < 3:
             line = Line.from_two_points(start=connecting_points[0], end=connecting_points[1])
@@ -556,20 +578,30 @@ class GBUCoordinateCenter(CoordinatePoint):
     @property
     def vector_to_farthest_connecting_point(self):
         # find the plane perpendicular to the vector to the average connecting point
-        plane = Plane.from_point_and_normal(self.coordinates, self.vector_to_connecting_point_plane)
+        plane = Plane.from_point_and_normal(
+            self.coordinates, self.vector_to_connecting_point_plane
+        )
         # project all connecting points onto the plane
-        projected_points = [plane.project_point(p.coordinates) for p in self.hasGBUConnectingPoint]
+        projected_points = [
+            plane.project_point(p.coordinates) for p in self.ordered_connecting_points
+        ]
         # find the farthest connecting point and construct a vector from center to it
         farthest_projected_point = self.coordinates.farthest_point(projected_points)
-        vector = Vector.from_two_points(start=self.coordinates, end=farthest_projected_point)
+        vector = Vector.from_two_points(
+            start=self.coordinates, end=farthest_projected_point
+        )
         return vector
 
     @property
     def vector_to_shortest_side(self):
         # find the plane perpendicular to the vector to the average connecting point
-        plane = Plane.from_point_and_normal(self.coordinates, self.vector_to_connecting_point_plane)
+        plane = Plane.from_point_and_normal(
+            self.coordinates, self.vector_to_connecting_point_plane
+        )
         # project all connecting points onto the plane
-        projected_points = [plane.project_point(p.coordinates) for p in self.hasGBUConnectingPoint]
+        projected_points = [
+            plane.project_point(p.coordinates) for p in self.ordered_connecting_points
+        ]
         # find the closest pair of connecting points and construct a vector connecting the center to the line connecting them
         closest_pair = Point.closest_pair(projected_points)
         line = Line.from_two_points(start=closest_pair[0], end=closest_pair[1])
@@ -953,18 +985,25 @@ class ChemicalBuildingUnit(BaseClass):
 
     @property
     def is_metal_cbu(self):
-        return all([isinstance(bs, MetalSite) for bs in list(self.hasBindingSite)])
+        return all([isinstance(bs, MetalSite) for bs in self.ordered_binding_sites])
 
     @property
     def active_binding_sites(self):
-        return [bs for bs in list(self.hasBindingSite) if not bs.temporarily_blocked]
+        return [bs for bs in self.ordered_binding_sites if not bs.temporarily_blocked]
+    
+    @property
+    def ordered_binding_sites(self) -> list[BindingSite]:
+        return sorted(
+            list(self.hasBindingSite),
+            key=lambda bs: list(bs.hasOrder)[0]
+        )
 
     def allocate_active_binding_sites(self, num: int):
-        for bs in list(self.hasBindingSite)[num:]:
+        for bs in self.ordered_binding_sites[num:]:
             bs.temporarily_blocked = True
 
     def release_blocked_binding_sites(self):
-        for bs in self.hasBindingSite:
+        for bs in self.ordered_binding_sites:
             bs.temporarily_blocked = False
 
     def load_geometry_from_fileserver(self, sparql_client):
@@ -1003,15 +1042,22 @@ class ChemicalBuildingUnit(BaseClass):
 
         # iterate through the json file and process the coordinates
         _bs_clz = MetalSite if metal_site else OrganicSite
+        bs_order = 0
         for k, v in cbu_json.items():
             if v['atom'] == 'X':
                 pt = _bs_clz(
                     hasOuterCoordinationNumber=ocn,
-                    hasBindingPoint=BindingPoint(hasX=v['coordinate_x'], hasY=v['coordinate_y'], hasZ=v['coordinate_z']),
+                    hasBindingPoint=BindingPoint(
+                        hasX=v["coordinate_x"],
+                        hasY=v["coordinate_y"],
+                        hasZ=v["coordinate_z"],
+                    ),
                     hasBindingFragment=binding_fragment,
+                    hasOrder=bs_order,
                 )
                 cbu_binding_points[k] = pt
                 lst_binding_sites.append(pt)
+                bs_order += 1
             elif str(v['atom']).lower() == 'center':
                 print('NOTE!!! Center point is not used in the current implementation.')
             else:
@@ -1684,30 +1730,54 @@ class MetalOrganicPolyhedron(CoordinationCage):
             # TODO optimise below
             # rotate the CBU to match the GBU
             # rotate the vector from center to binding site plane of CBU to the vector from center to connecting point plane of GBU
+            first_alignment_vector_cbu = cbu.vector_to_binding_site_plane
             rotation_matrix_1 = {
-                gbu_center.instance_iri: cbu.vector_to_binding_site_plane.get_rotation_matrix_to_parallel(
-                    gbu_center.vector_to_connecting_point_plane, flip_if_180=True) for gbu_center in gbu.hasGBUCoordinateCenter
+                gbu_center.instance_iri: (
+                    first_alignment_vector_cbu.get_rotation_matrix_to_parallel(
+                        gbu_center.vector_to_connecting_point_plane, flip_if_180=True
+                    )
+                )
+                for gbu_center in gbu.ordered_coordinate_centers
             }
             # rotate the normal vector of the line connecting the farthest pair of binding sites of CBU to the same vector of GBU
             # NOTE that here we are getting the rotation matrix for the vector that is already rotated
             rotation_matrix_2 = {}
-            for gbu_center in gbu.hasGBUCoordinateCenter:
+
+            if gbu.is_4_planar:
+                second_vector_for_alignment_cbu = cbu.vector_to_shortest_side
+            else:
+                second_vector_for_alignment_cbu = cbu.vector_to_farthest_binding_site
+
+            for gbu_center in gbu.ordered_coordinate_centers:
                 gbu_center: GBUCoordinateCenter
                 if gbu.is_4_planar:
-                    second_vector_for_alignment_cbu = cbu.vector_to_shortest_side
                     second_vector_for_alignment_gbu = gbu_center.vector_to_shortest_side
                 else:
-                    second_vector_for_alignment_cbu = cbu.vector_to_farthest_binding_site
-                    second_vector_for_alignment_gbu = gbu_center.vector_to_farthest_connecting_point
-                rotated = rotation_matrix_1[gbu_center.instance_iri].apply(second_vector_for_alignment_cbu.as_array)
-                rotated_cbu_center_to_binding_site_plane = Vector.from_array(rotation_matrix_1[gbu_center.instance_iri].apply(cbu.vector_to_binding_site_plane.as_array))
-                rotation_matrix_2[gbu_center.instance_iri] = Vector.from_array(rotated).get_rotation_matrix_to_parallel(
-                    second_vector_for_alignment_gbu, flip_if_180=True, base_axis_if_180=rotated_cbu_center_to_binding_site_plane)
+                    second_vector_for_alignment_gbu = (
+                        gbu_center.vector_to_farthest_connecting_point
+                    )
+                rotated = rotation_matrix_1[gbu_center.instance_iri].apply(
+                    second_vector_for_alignment_cbu.as_array
+                )
+                rotated_cbu_center_to_binding_site_plane = Vector.from_array(
+                    rotation_matrix_1[gbu_center.instance_iri].apply(
+                        cbu.vector_to_binding_site_plane.as_array
+                    )
+                )
+                rotation_matrix_2[gbu_center.instance_iri] = Vector.from_array(
+                    rotated
+                ).get_rotation_matrix_to_parallel(
+                    second_vector_for_alignment_gbu,
+                    flip_if_180=True,
+                    base_axis_if_180=rotated_cbu_center_to_binding_site_plane,
+                )
             # put the two rotation matrix together
             cbu_rotation_matrix[cbu.instance_iri] = {
                 gbu_center.instance_iri: [
-                    rotation_matrix_1[gbu_center.instance_iri], rotation_matrix_2[gbu_center.instance_iri]
-                ] for gbu_center in gbu.hasGBUCoordinateCenter
+                    rotation_matrix_1[gbu_center.instance_iri],
+                    rotation_matrix_2[gbu_center.instance_iri],
+                ]
+                for gbu_center in gbu.ordered_coordinate_centers
             }
             # calculate the charge and molecular weight of the MOP
             mop_charge += cbu.charge * len(gbu.hasGBUCoordinateCenter)
