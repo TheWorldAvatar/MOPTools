@@ -62,14 +62,21 @@ class Geometry(BaseClass):
         return cls(hasGeometryFile=file_name, hasPoints=points)
 
     def load_xyz_from_geometry_file(self, sparql_client, data_dir=None):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         lst_pt = []
         remote_file_path = list(self.hasGeometryFile)[0]
         downloaded_file_path = remote_file_path.split('/')[-1]
+        
+        logger.info(f"Loading geometry file: {remote_file_path}")
         
         # Get file server URL from the client for constructing full URLs
         fs_url = getattr(sparql_client, 'fs_url', None)
         if fs_url is None and hasattr(sparql_client, 'sparql_client'):
             fs_url = getattr(sparql_client.sparql_client, 'fs_url', None)
+        
+        logger.info(f"File server URL: {fs_url}")
         
         # Get data_dir from settings if not provided
         if data_dir is None:
@@ -105,11 +112,19 @@ class Geometry(BaseClass):
                     # Try to download from file server if available
                     if fs_url:
                         # It's a filename that needs to be downloaded from the file server
-                        # Construct full remote URL
-                        full_remote_path = f"{fs_url.rstrip('/')}/{remote_file_path}"
+                        # For Hybrid option: handle paths like "data/cbu/file.xyz" or just "file.xyz"
+                        # Extract just the filename if path contains directory components
+                        if '/' in remote_file_path:
+                            actual_filename = remote_file_path.split('/')[-1]
+                            full_remote_path = f"{fs_url.rstrip('/')}/{actual_filename}"
+                        else:
+                            full_remote_path = f"{fs_url.rstrip('/')}/{remote_file_path}"
+                        logger.info(f"Attempting to download from: {full_remote_path}")
                         try:
                             sparql_client.download_file(full_remote_path, downloaded_file_path)
+                            logger.info(f"Successfully downloaded to: {downloaded_file_path}")
                         except Exception as e:
+                            logger.error(f"Failed to download {full_remote_path}: {e}")
                             raise FileNotFoundError(
                                 f"File not found: {downloaded_file_path}. "
                                 f"Remote path: {remote_file_path}. "
@@ -129,9 +144,12 @@ class Geometry(BaseClass):
                         )
         else:
             # It's already a full URL, download directly
+            logger.info(f"Attempting to download full URL: {remote_file_path}")
             try:
                 sparql_client.download_file(remote_file_path, downloaded_file_path)
+                logger.info(f"Successfully downloaded to: {downloaded_file_path}")
             except Exception as e:
+                logger.error(f"Failed to download {remote_file_path}: {e}")
                 if not os.path.exists(downloaded_file_path):
                     raise FileNotFoundError(
                         f"File not found: {downloaded_file_path}. "

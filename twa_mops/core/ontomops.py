@@ -189,6 +189,27 @@ class GenericBuildingUnit(BaseClass):
                 return gbu_type_obj.split('/')[-1]
             return None
 
+    def visualise(self, backend: str = 'auto', data_dir=None, debug: bool = False, use_barycenter: bool = False, use_first_only: bool = True, **kwargs):
+        """Visualise the GenericBuildingUnit.
+        
+        Uses xyzrender if available (preferred), falls back to plotly.
+        GBUs are visualized using their coordinate center and connecting point data.
+        
+        Args:
+            backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
+            data_dir: Data directory for geometry files (default: None)
+            debug: If True, print debug information about coordinate extraction (default: False)
+            use_barycenter: If True, calculate the barycenter of connecting points instead of using the given coordinate center. This ensures the center point is the geometric center of the connecting points (default: False)
+            use_first_only: If True, only use the first GBUCoordinateCenter for the GBU (default: True). Set to False to use all coordinate centers.
+            **kwargs: Additional arguments passed to the visualization function
+            
+        Returns:
+            Visualisation object (xyzrender.SVGResult or plotly.Figure)
+        """
+        from twa_mops.utils.visualization import visualise_gbu
+        return visualise_gbu(self, backend=backend, data_dir=data_dir, debug=debug, use_barycenter=use_barycenter, use_first_only=use_first_only, **kwargs)
+
+
 class GenericBuildingUnitNumber(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
     isNumberOf: IsNumberOf[GenericBuildingUnit]
@@ -241,7 +262,7 @@ class AssemblyModel(BaseClass):
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
     hasPoreRing: Optional[HasPoreRing[PoreRing]] = None
 
-    def visualise(self, backend: str = 'auto', data_dir=None, **kwargs):
+    def visualise(self, backend: str = 'auto', data_dir=None, debug: bool = False, use_barycenter: bool = False, use_first_only: bool = False, **kwargs):
         """Visualise the AssemblyModel.
         
         Uses xyzrender if available (preferred), falls back to plotly.
@@ -249,13 +270,16 @@ class AssemblyModel(BaseClass):
         Args:
             backend: Backend to use ('auto', 'xyzrender', 'plotly') (default: 'auto')
             data_dir: Data directory for geometry files (default: None)
+            debug: If True, print debug information about coordinate extraction (default: False)
+            use_barycenter: If True, calculate the barycenter of connecting points instead of using the given coordinate centers. This ensures each center point is the geometric center of its connecting points (default: False)
+            use_first_only: If True, only use the first GBUCoordinateCenter for each GBU in the AM (default: False). Set to True to show only one instance per GBU type.
             **kwargs: Additional arguments passed to the visualization function
             
         Returns:
             Visualisation object (xyzrender.SVGResult or plotly.Figure)
         """
         from twa_mops.utils.visualization import visualise_am
-        return visualise_am(self, backend=backend, data_dir=data_dir, **kwargs)
+        return visualise_am(self, backend=backend, data_dir=data_dir, debug=debug, use_barycenter=use_barycenter, use_first_only=use_first_only, **kwargs)
 
     @staticmethod
     def process_geometry_json(am_json, gbu_type_1_label, gbu_type_2_label):

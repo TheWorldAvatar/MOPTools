@@ -32,6 +32,9 @@ class Settings(BaseSettings):
         fs_url: File server URL for geometry files
         fs_username: File server username
         fs_password: File server password
+        timeout: Default timeout in seconds for network requests
+        max_retries: Maximum number of retry attempts for failed requests
+        retry_delay: Initial delay between retries in seconds
     """
     
     # SPARQL endpoint configuration
@@ -53,6 +56,11 @@ class Settings(BaseSettings):
     fs_username: str = ""
     fs_password: str = ""
     
+    # Network configuration
+    timeout: int = 30  # Default timeout in seconds for network requests
+    max_retries: int = 3  # Maximum number of retry attempts for failed requests
+    retry_delay: float = 1.0  # Initial delay between retries in seconds
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -73,7 +81,7 @@ def get_kg_client():
         >>> kg_client = get_kg_client()
         >>> results = kg_client.pull_objects(['http://example.com/iri'])
     """
-    from kg.client import KnowledgeGraphClient
+    from twa_mops.kg.client import KnowledgeGraphClient
     
     return KnowledgeGraphClient(
         endpoint=settings.sparql_endpoint,
@@ -83,4 +91,7 @@ def get_kg_client():
         fs_url=settings.fs_url if settings.fs_url else None,
         fs_username=settings.fs_username if settings.fs_username else None,
         fs_password=settings.fs_password if settings.fs_password else None,
+        timeout=settings.timeout,
+        max_retries=settings.max_retries,
+        retry_delay=settings.retry_delay,
     )

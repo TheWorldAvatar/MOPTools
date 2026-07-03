@@ -16,6 +16,9 @@ from typing import Optional, List, Dict, Any, Tuple
 from pydantic import BaseModel, validator, Field, HttpUrl, conint
 import time
 import re
+import warnings
+import concurrent.futures
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 try:
     from twa.kg_operations import PySparqlClient
@@ -446,6 +449,133 @@ class FilePathExistsInput(FilePathInput):
         return v
 
 
+class TimeoutInput(BaseModel):
+    """Validation model for timeout parameter.
+    
+    Validates that timeout values are positive integers representing seconds.
+    
+    Valid range: 1 to 300 seconds (default: 30)
+    
+    Example:
+        >>> TimeoutInput(timeout=30)  # Default
+        >>> TimeoutInput(timeout=60)  # Longer timeout
+        >>> TimeoutInput(timeout=0)  # Raises ValueError
+    """
+    timeout: int = Field(
+        default=30,
+        description="Timeout in seconds for network requests",
+        ge=1,
+        le=300
+    )
+    
+    @validator('timeout')
+    def validate_timeout(cls, v):
+        """Validate timeout value.
+        
+        Args:
+            v: The timeout value to validate
+            
+        Returns:
+            int: The validated timeout value
+            
+        Raises:
+            ValueError: If timeout is outside the valid range (1-300)
+        """
+        if v < 1:
+            raise ValueError(f"Timeout must be at least 1 second, got {v}")
+        if v > 300:
+            raise ValueError(
+                f"Timeout of {v} seconds is too large. "
+                f"Maximum allowed is 300 seconds (5 minutes)."
+            )
+        return v
+
+
+class MaxRetriesInput(BaseModel):
+    """Validation model for max_retries parameter.
+    
+    Validates that max_retries values are non-negative integers.
+    
+    Valid range: 0 to 10 retries (default: 3)
+    
+    Example:
+        >>> MaxRetriesInput(max_retries=3)  # Default
+        >>> MaxRetriesInput(max_retries=0)  # No retries
+        >>> MaxRetriesInput(max_retries=11)  # Raises ValueError
+    """
+    max_retries: int = Field(
+        default=3,
+        description="Maximum number of retry attempts for failed requests",
+        ge=0,
+        le=10
+    )
+    
+    @validator('max_retries')
+    def validate_max_retries(cls, v):
+        """Validate max_retries value.
+        
+        Args:
+            v: The max_retries value to validate
+            
+        Returns:
+            int: The validated max_retries value
+            
+        Raises:
+            ValueError: If max_retries is outside the valid range (0-10)
+        """
+        if v < 0:
+            raise ValueError(f"max_retries must be non-negative, got {v}")
+        if v > 10:
+            raise ValueError(
+                f"max_retries of {v} is too large. "
+                f"Maximum allowed is 10 retries."
+            )
+        return v
+
+
+class RetryDelayInput(BaseModel):
+    """Validation model for retry_delay parameter.
+    
+    Validates that retry_delay values are non-negative numbers representing seconds.
+    
+    Valid range: 0.0 to 30.0 seconds (default: 1.0)
+    
+    Example:
+        >>> RetryDelayInput(retry_delay=1.0)  # Default
+        >>> RetryDelayInput(retry_delay=0.5)  # Faster retries
+        >>> RetryDelayInput(retry_delay=30.0)  # Maximum delay
+        >>> RetryDelayInput(retry_delay=-1)  # Raises ValueError
+    """
+    retry_delay: float = Field(
+        default=1.0,
+        description="Initial delay between retries in seconds",
+        ge=0.0,
+        le=30.0
+    )
+    
+    @validator('retry_delay')
+    def validate_retry_delay(cls, v):
+        """Validate retry_delay value.
+        
+        Args:
+            v: The retry_delay value to validate
+            
+        Returns:
+            float: The validated retry_delay value
+            
+        Raises:
+            ValueError: If retry_delay is outside the valid range (0.0-30.0)
+        """
+        if v < 0.0:
+            raise ValueError(f"retry_delay must be non-negative, got {v}")
+        if v > 30.0:
+            raise ValueError(
+                f"retry_delay of {v} seconds is too large. "
+                f"Maximum allowed is 30 seconds."
+            )
+        return v
+
+
 class KnowledgeGraphClient:
     """Client for interacting with the Knowledge Graph.
     
@@ -477,6 +607,9 @@ class KnowledgeGraphClient:
         fs_user: Optional[str] = None,
         fs_pwd: Optional[str] = None,
         enable_performance_timing: bool = False,
+        timeout: int = 30,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ):
         """Initialize the KnowledgeGraphClient.
         
@@ -493,10 +626,13 @@ class KnowledgeGraphClient:
             fs_user: Alias for fs_username (for backward compatibility)
             fs_pwd: Alias for fs_password (for backward compatibility)
             enable_performance_timing: Enable timing metrics for queries (default: False)
+            timeout: Timeout in seconds for network requests (default: 30)
+            max_retries: Maximum number of retry attempts for failed requests (default: 3)
+            retry_delay: Initial delay between retries in seconds (default: 1.0)
         
         Raises:
             ImportError: If PySparqlClient is not available
-            ValueError: If endpoint or max_cache_size validation fails
+            ValueError: If endpoint, max_cache_size, timeout, max_retries, or retry_delay validation fails
         """
         if PySparqlClient is None:
             raise ImportError(
@@ -507,6 +643,9 @@ class KnowledgeGraphClient:
         # Validate inputs using Pydantic models
         validated_endpoint = EndpointInput(endpoint=endpoint).endpoint
         validated_cache_size = CacheSizeInput(max_cache_size=max_cache_size).max_cache_size
+        validated_timeout = TimeoutInput(timeout=timeout).timeout
+        validated_max_retries = MaxRetriesInput(max_retries=max_retries).max_retries
+        validated_retry_delay = RetryDelayInput(retry_delay=retry_delay).retry_delay
         
         self.endpoint = validated_endpoint
         self.max_cache_size = validated_cache_size
@@ -514,6 +653,11 @@ class KnowledgeGraphClient:
         self._last_query_time = 0
         self._total_query_time = 0
         self._query_count = 0
+        
+        # Network configuration
+        self.timeout = validated_timeout
+        self.max_retries = validated_max_retries
+        self.retry_delay = validated_retry_delay
         
         # Support both parameter naming conventions
         self.username = username or kg_user
@@ -1163,22 +1307,53 @@ class KnowledgeGraphClient:
     def execute_query(
         self,
         query: str,
+        max_retries: Optional[int] = None,
+        retry_delay: Optional[float] = None,
     ) -> Any:
-        """Execute a raw SPARQL query.
+        """Execute a raw SPARQL query with retry and timeout support.
         
         Args:
             query: The SPARQL query string to execute
+            max_retries: Maximum number of retry attempts (defaults to self.max_retries)
+            retry_delay: Initial delay between retries in seconds (defaults to self.retry_delay)
         
         Returns:
             The query results
         
         Raises:
             ValueError: If query is empty or None
+            QueryError: If query fails after all retry attempts
         """
         if not query or not query.strip():
             raise ValueError("SPARQL query cannot be empty or None")
         
-        return self.sparql_client.perform_query(query.strip())
+        # Use instance defaults if not provided
+        effective_max_retries = max_retries if max_retries is not None else self.max_retries
+        effective_retry_delay = retry_delay if retry_delay is not None else self.retry_delay
+        
+        # Try with retries
+        last_error = None
+        for attempt in range(effective_max_retries + 1):
+            try:
+                return self.sparql_client.perform_query(query.strip())
+            except Exception as e:
+                last_error = e
+                if attempt < effective_max_retries:
+                    warnings.warn(
+                        f"Query attempt {attempt + 1} failed, retrying in {effective_retry_delay}s: {e}",
+                        UserWarning
+                    )
+                    time.sleep(effective_retry_delay)
+                    # Exponential backoff
+                    effective_retry_delay *= 2
+        
+        # All retries failed
+        raise QueryError(
+            f"Failed to execute query after {effective_max_retries} retries",
+            query=query.strip(),
+            endpoint=self.endpoint,
+            original_error=last_error
+        ) from last_error
     
     def upload_graph(
         self,
@@ -1224,34 +1399,49 @@ class KnowledgeGraphClient:
         validated_remote = FilePathInput(path=remote_path).path
         validated_local = FilePathInput(path=local_path).path
         
-        # Validate retry parameters
-        if not isinstance(max_retries, int) or max_retries < 0:
-            raise ValueError(f"max_retries must be a non-negative integer, got {max_retries}")
-        if not isinstance(retry_delay, (int, float)) or retry_delay < 0:
-            raise ValueError(f"retry_delay must be a non-negative number, got {retry_delay}")
+        # Use instance defaults if not provided
+        effective_max_retries = max_retries if max_retries is not None else self.max_retries
+        effective_retry_delay = retry_delay if retry_delay is not None else self.retry_delay
         
-        # Try with retries
+        # Validate retry parameters
+        if not isinstance(effective_max_retries, int) or effective_max_retries < 0:
+            raise ValueError(f"max_retries must be a non-negative integer, got {effective_max_retries}")
+        if not isinstance(effective_retry_delay, (int, float)) or effective_retry_delay < 0:
+            raise ValueError(f"retry_delay must be a non-negative number, got {effective_retry_delay}")
+        
+        # Try with retries and timeout
         last_error = None
-        for attempt in range(max_retries + 1):
+        for attempt in range(effective_max_retries + 1):
             try:
-                result = self.sparql_client.download_file(validated_remote, validated_local)
-                return result
+                # Use requests directly with timeout support instead of PySparqlClient
+                import requests
+                response = requests.get(
+                    validated_remote,
+                    auth=(self.fs_username, self.fs_password) if self.fs_username and self.fs_password else None,
+                    timeout=self.timeout
+                )
+                if response.status_code == requests.codes.ok:
+                    with open(validated_local, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    return True
+                else:
+                    raise Exception(f"File download failed with status {response.status_code}: {response.text}")
+                    
             except Exception as e:
                 last_error = e
-                if attempt < max_retries:
-                    import time
-                    import warnings
+                if attempt < effective_max_retries:
                     warnings.warn(
-                        f"Download attempt {attempt + 1} failed, retrying in {retry_delay}s: {e}",
+                        f"Download attempt {attempt + 1} failed, retrying in {effective_retry_delay}s: {e}",
                         UserWarning
                     )
-                    time.sleep(retry_delay)
+                    time.sleep(effective_retry_delay)
                     # Exponential backoff
-                    retry_delay *= 2
+                    effective_retry_delay *= 2
         
         # All retries failed
         raise QueryError(
-            f"Failed to download file after {max_retries} retries",
+            f"Failed to download file after {effective_max_retries} retries",
             endpoint=self.fs_url or self.endpoint,
             original_error=last_error
         ) from last_error
@@ -1284,34 +1474,58 @@ class KnowledgeGraphClient:
         # Validate inputs
         validated_local = FilePathExistsInput(path=local_path).path
         
-        # Validate retry parameters
-        if not isinstance(max_retries, int) or max_retries < 0:
-            raise ValueError(f"max_retries must be a non-negative integer, got {max_retries}")
-        if not isinstance(retry_delay, (int, float)) or retry_delay < 0:
-            raise ValueError(f"retry_delay must be a non-negative number, got {retry_delay}")
+        # Use instance defaults if not provided
+        effective_max_retries = max_retries if max_retries is not None else self.max_retries
+        effective_retry_delay = retry_delay if retry_delay is not None else self.retry_delay
         
-        # Try with retries
+        # Validate retry parameters
+        if not isinstance(effective_max_retries, int) or effective_max_retries < 0:
+            raise ValueError(f"max_retries must be a non-negative integer, got {effective_max_retries}")
+        if not isinstance(effective_retry_delay, (int, float)) or effective_retry_delay < 0:
+            raise ValueError(f"retry_delay must be a non-negative number, got {effective_retry_delay}")
+        
+        # Check if file server is configured
+        if not self.fs_url:
+            raise ValueError("File server URL (fs_url) is not configured")
+        
+        # Try with retries and timeout
         last_error = None
-        for attempt in range(max_retries + 1):
+        from datetime import datetime
+        
+        for attempt in range(effective_max_retries + 1):
             try:
-                result = self.sparql_client.upload_file(validated_local)
-                return result
+                # Use requests directly with timeout support instead of PySparqlClient
+                import requests
+                with open(validated_local, 'rb') as file_obj:
+                    files = {'file': file_obj}
+                    timestamp_upload = datetime.now().timestamp()
+                    response = requests.post(
+                        self.fs_url,
+                        auth=(self.fs_username, self.fs_password) if self.fs_username and self.fs_password else None,
+                        files=files,
+                        timeout=self.timeout
+                    )
+                
+                if response.status_code == requests.codes.ok:
+                    remote_file_path = response.headers.get('file', validated_local)
+                    return remote_file_path, timestamp_upload
+                else:
+                    raise Exception(f"File upload failed with status {response.status_code}: {response.text}")
+                    
             except Exception as e:
                 last_error = e
-                if attempt < max_retries:
-                    import time
-                    import warnings
+                if attempt < effective_max_retries:
                     warnings.warn(
-                        f"Upload attempt {attempt + 1} failed, retrying in {retry_delay}s: {e}",
+                        f"Upload attempt {attempt + 1} failed, retrying in {effective_retry_delay}s: {e}",
                         UserWarning
                     )
-                    time.sleep(retry_delay)
+                    time.sleep(effective_retry_delay)
                     # Exponential backoff
-                    retry_delay *= 2
+                    effective_retry_delay *= 2
         
         # All retries failed
         raise QueryError(
-            f"Failed to upload file after {max_retries} retries",
+            f"Failed to upload file after {effective_max_retries} retries",
             endpoint=self.fs_url or self.endpoint,
             original_error=last_error
         ) from last_error
