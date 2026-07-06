@@ -34,7 +34,7 @@ class StackType(Enum):
 # Stack configurations
 STACK_CONFIGS = {
     StackType.LOCAL: {
-        "sparql_endpoint": "http://localhost:3838/bigdata/namespace/ontomops/sparql",
+        "sparql_endpoint": "http://localhost:3838/blazegraph/namespace/ontomops/sparql",
         "fs_url": "http://localhost:8000/",
         "namespace": "ontomops",
         "name": "Local Stack",

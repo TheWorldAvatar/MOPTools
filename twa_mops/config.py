@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     """
     
     # SPARQL endpoint configuration
-    sparql_endpoint: str = "http://localhost:3838/bigdata/namespace/ontomops/sparql"
+    sparql_endpoint: str = "http://localhost:3838/blazegraph/namespace/ontomops/sparql"
     
     # Data directory - single consistent location
     # Relative to current working directory. Recommended: twa_mops/data/
