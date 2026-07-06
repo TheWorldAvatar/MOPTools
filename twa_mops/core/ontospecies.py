@@ -93,12 +93,26 @@ class Geometry(BaseClass):
             if os.path.exists(remote_file_path):
                 downloaded_file_path = remote_file_path
             else:
-                # Try to find the file in data_dir or tutorials
+                # Try to find the file in common data locations. Include both
+                # cwd-relative and package-relative paths so notebooks work
+                # whether launched from the project root or tutorials folder.
+                package_dir = os.path.dirname(os.path.dirname(__file__))
                 search_paths = []
                 if data_dir:
-                    search_paths.append(data_dir)
-                # Also check tutorials directory for CBU files created there
-                search_paths.extend(['tutorials', os.path.join('tutorials', 'data')])
+                    search_paths.extend([
+                        data_dir,
+                        os.path.join(data_dir, 'cbu'),
+                        os.path.join(data_dir, os.path.dirname(remote_file_path)),
+                    ])
+                search_paths.extend([
+                    'tutorials',
+                    os.path.join('tutorials', 'data'),
+                    os.path.join('tutorials', 'data', 'cbu'),
+                    os.path.join(package_dir, 'tutorials'),
+                    os.path.join(package_dir, 'tutorials', 'data'),
+                    os.path.join(package_dir, 'tutorials', 'data', 'cbu'),
+                    os.path.join(package_dir, os.path.dirname(remote_file_path)),
+                ])
                 
                 found = False
                 for search_path in search_paths:
