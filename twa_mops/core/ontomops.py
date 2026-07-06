@@ -1986,6 +1986,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
         # equation to solve: sin(omega)/l_vertical_cbu1 = sin(theta-omega)/l_vertical_cbu2
         initial_guess = theta_rad / 2
         omega = fsolve(lambda x: np.sin(x)/l_vertical_cbu1 - np.sin(theta_rad - x)/l_vertical_cbu2, initial_guess)
+        omega = float(omega[0])
         shared_side = l_vertical_cbu1 / np.sin(omega)
         scaled_cbu1 = math.sqrt(projected_adjusted_side_length_cbu1**2 + shared_side**2 - 2*projected_adjusted_side_length_cbu1*shared_side*np.cos(np.pi - gbu_projected_cbu_angle_cbu1 - omega))
         scaled_cbu2 = math.sqrt(projected_adjusted_side_length_cbu2**2 + shared_side**2 - 2*projected_adjusted_side_length_cbu2*shared_side*np.cos(np.pi - gbu_projected_cbu_angle_cbu2 - (theta_rad - omega)))
