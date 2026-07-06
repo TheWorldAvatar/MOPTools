@@ -4,6 +4,7 @@ numpy
 scipy
 pydantic==2.11.7
 pydantic-core==2.33.2
+pydantic-settings
 python-dotenv
 plotly
 rdkit

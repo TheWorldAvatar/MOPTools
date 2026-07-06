@@ -1,8 +1,3 @@
-twa
-scipy
-rdkit
-numpy
-pandas
-plotly
-kaleido
-nbformat
+# The authoritative dependency list lives at the repository root.
+# This file is kept as a compatibility shim for older instructions.
+-r ../requirements.txt

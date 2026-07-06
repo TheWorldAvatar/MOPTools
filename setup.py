@@ -3,6 +3,20 @@
 
 from setuptools import setup, find_packages
 
+
+NOTEBOOK_REQUIREMENTS = [
+    "ipykernel",
+    "nbformat",
+    "kaleido",
+    "xyzrender>=0.3.0",
+]
+
+DEV_REQUIREMENTS = [
+    *NOTEBOOK_REQUIREMENTS,
+    "pytest",
+    "pytest-cov",
+]
+
 # Read requirements from requirements.txt
 with open("requirements.txt", "r", encoding="utf-8") as f:
     requirements = [line.strip() for line in f if line.strip() and not line.startswith("#")]
@@ -28,8 +42,10 @@ setup(
     python_requires=">=3.8, <3.13",
     install_requires=requirements,
     extras_require={
+        "notebook": NOTEBOOK_REQUIREMENTS,
         "xyzrender": ["xyzrender>=0.3.0"],
-        "all": ["xyzrender>=0.3.0"],
+        "dev": DEV_REQUIREMENTS,
+        "all": DEV_REQUIREMENTS,
     },
     classifiers=[
         "Development Status :: 3 - Alpha",
