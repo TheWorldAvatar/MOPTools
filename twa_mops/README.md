@@ -38,37 +38,46 @@
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.12 is recommended for the tutorials
 - pip package manager
+- Java 17, used by the TWA/Py4J gateway
+- Conda or Miniforge, if using the conda setup below
 - Access to a TWA Knowledge Graph endpoint (local or remote)
 
 ### Install from source
+
+The tutorials are intended to be run from an editable source install so that notebook imports use the local checkout.
 
 ```bash
 # Clone the repository
 git clone https://github.com/your-org/MOPTools.git
 cd MOPTools
 
-# Create conda environment (recommended)
-conda create -n twa python=3.11
+# Create and activate a conda environment
+conda create -n twa python=3.12
 conda activate twa
 
-# Install dependencies
-pip install -r requirements.txt
+# Install MOPTools with notebook support
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e ".[notebook]"
 
-# Install MOPTools in development mode
-pip install -e .
+# Register the environment as a Jupyter kernel
+python -m ipykernel install --user --name twa --display-name "twa conda"
 ```
+
+If `conda` is not available, install Miniforge or use a standard Python virtual environment with the same `pip install -e ".[notebook]"` command.
+
+When opening a tutorial notebook in VS Code, select the `twa conda` kernel. The first notebook cells check that the editable install, Java version, KG endpoint, and required local files are available.
 
 ### Required Dependencies
 
-- `twa` - TWA Python client library
-- `pydantic` - Data validation and settings management
-- `rdflib` - RDF library for KG operations
-- `python-dotenv` - Environment variable management
-- `pytest` - Testing framework (for development)
+- Runtime dependencies are listed in the root `requirements.txt`.
+- Notebook dependencies are installed via the `notebook` extra in `setup.py`.
+- Development/test dependencies are installed via the `dev` extra:
 
-See `requirements.txt` for full dependency list.
+```bash
+python -m pip install -e ".[dev]"
+```
 
 ---
 
@@ -490,4 +499,3 @@ For questions, issues, or feature requests:
 ---
 
 *Documentation last updated: 2026-06-23*
-
