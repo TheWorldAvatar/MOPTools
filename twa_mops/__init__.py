@@ -4,7 +4,4 @@ This package provides tools for assembling and working with Metal-Organic Polyhe
 using the TWA Knowledge Graph.
 """
 
-# Re-export commonly used modules for convenience
-from . import core, kg, assembly, utils, scripts, config
-
 __all__ = ['core', 'kg', 'assembly', 'utils', 'scripts', 'config']

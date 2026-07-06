@@ -20,10 +20,21 @@ import warnings
 import concurrent.futures
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 
-try:
-    from twa.kg_operations import PySparqlClient
-except ImportError:
-    PySparqlClient = None
+def _get_py_sparql_client_class():
+    """Import PySparqlClient only when a KG client is constructed.
+
+    Importing twa.kg_operations starts the Py4J/JPS Java gateway in some
+    environments, so keeping this lazy prevents ordinary module imports from
+    blocking notebook startup.
+    """
+    try:
+        from twa.kg_operations import PySparqlClient
+    except ImportError as exc:
+        raise ImportError(
+            "twa.kg_operations.PySparqlClient is required. "
+            "Please install the twa package."
+        ) from exc
+    return PySparqlClient
 
 
 # ============================================================================
@@ -634,12 +645,6 @@ class KnowledgeGraphClient:
             ImportError: If PySparqlClient is not available
             ValueError: If endpoint, max_cache_size, timeout, max_retries, or retry_delay validation fails
         """
-        if PySparqlClient is None:
-            raise ImportError(
-                "twa.kg_operations.PySparqlClient is required. "
-                "Please install the twa package."
-            )
-        
         # Validate inputs using Pydantic models
         validated_endpoint = EndpointInput(endpoint=endpoint).endpoint
         validated_cache_size = CacheSizeInput(max_cache_size=max_cache_size).max_cache_size
@@ -674,7 +679,8 @@ class KnowledgeGraphClient:
             )
         
         # Initialize the SPARQL client
-        self.sparql_client = PySparqlClient(
+        py_sparql_client = _get_py_sparql_client_class()
+        self.sparql_client = py_sparql_client(
             query_endpoint=validated_endpoint,
             update_endpoint=validated_endpoint,
             kg_user=self.username,
