@@ -14,8 +14,8 @@ import ontosyn
 Zr_H2BDC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_e67c729f-f153-4742-9fee-e00c623d151b"
 Zr_H3BTC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_1d52f054-9421-4aac-bd29-76d8a9519ccb"
 Zr_H2BPDC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_3d71c19a-ab54-4993-8c94-267dcfe41792"
-#mop0_iris = [Zr_H2BDC_MOP_IRI,Zr_H2BPDC_MOP_IRI,Zr_H3BTC_MOP_IRI]
-mop0_iris = [Zr_H3BTC_MOP_IRI]
+mop0_iris = [Zr_H2BDC_MOP_IRI,Zr_H2BPDC_MOP_IRI,Zr_H3BTC_MOP_IRI]
+#mop0_iris = [Zr_H3BTC_MOP_IRI]
 
 
 MOP_NOVELTY = False

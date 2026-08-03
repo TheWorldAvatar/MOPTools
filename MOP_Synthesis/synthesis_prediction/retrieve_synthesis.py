@@ -15,13 +15,8 @@ import twa
 ontosyn_client = twa.kg_operations.PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted')
 ontospecies_client = twa.kg_operations.PySparqlClient(credentials.ONTOSPECIES_ENDPOINT, 'restricted')
 
-synthesis_iris = ['https://www.theworldavatar.com/kg/OntoSyn/ChemicalSynthesis_fcbefc2f-9b00-4362-98fa-08a65a294714']
+synthesis_iris = ['https://www.theworldavatar.com/kg/OntoSyn/ChemicalSynthesis_77e0b25c-976c-4bf4-8204-888cbae7361d']
 syns = ontosyn.ChemicalSynthesis.pull_from_kg(iris=synthesis_iris,sparql_client=ontosyn_client,recursive_depth=-1)
-
-def getHeatingConditions(synthesis):
-    for step in list(synthesis.hasSynthesisStep):
-        if step.__class__ == ontosyn.HeatChill:
-            print("yes")
 
 def getMaterial(material,name=''):
     thermoBehaviour=list(material.thermodynamicBehaviour)[0]
@@ -63,6 +58,17 @@ def getValue(meas,defaultString="unknown"):
     else:
         amount = defaultString
     return amount
+
+def getHeatingInstructions(step):
+    temp = list(step.hasTargetTemperature)[0]
+    tempVal = getValue(temp, "unknown temperature")
+    tempRate = list(step.hasTemperatureRate)[0]
+    tempRateVal = getValue(tempRate, "undefined rate")
+    instr ="Heat or Chill to " + tempVal + " at " + tempRateVal
+    if list(step.hasVacuum)[0]:
+        instr+="\n under vacuum"
+    if list(step.isSealed)[0]:
+        instr+="\n while sealed"
 
 def getStep(step):
     order = list(step.hasOrder)[0]
@@ -110,15 +116,7 @@ def getStep(step):
                 tempVal = getValue(temp, "unknown temperature")
                 instr+="Stir at " + tempVal
         case ontosyn.HeatChill:
-            temp = list(step.hasTargetTemperature)[0]
-            tempVal = getValue(temp, "unknown temperature")
-            tempRate = list(step.hasTemperatureRate)[0]
-            tempRateVal = getValue(tempRate, "undefined rate")
-            instr+="Heat or Chill to " + tempVal + " at " + tempRateVal
-            if list(step.hasVacuum)[0]:
-                instr+="\n under vacuum"
-            if list(step.isSealed)[0]:
-                instr+="\n while sealed"
+            instr += getHeatingInstructions(step)
         case ontosyn.Filter:
             solvent = list(step.hasWashingSolvent)[0]
             if len(solvent.rdfs_label) > 0 and list(solvent.rdfs_label)[0] == "N/A":
