@@ -1,7 +1,6 @@
 import os
 import sys
-current = os.path.dirname(os.path.realpath(__file__))
-parent = os.path.dirname(current)
+parent = parent = os.path.abspath('')
 sys.path.append(parent)
 sys.path.append('..')
 from twa.kg_operations import PySparqlClient
@@ -16,7 +15,7 @@ Zr_H2BDC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyh
 Zr_H3BTC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_1d52f054-9421-4aac-bd29-76d8a9519ccb"
 Zr_H2BPDC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_3d71c19a-ab54-4993-8c94-267dcfe41792"
 
-mop0_iris = [Zr_H2BDC_MOP_IRI,Zr_H2BPDC_MOP_IRI]
+mop0_iris = [Zr_H2BDC_MOP_IRI,Zr_H3BTC_MOP_IRI]
 
 MOP_NOVELTY = True
 
@@ -36,7 +35,7 @@ for mop0 in mop0_list:
     predictable_mops = mops_client.perform_query(mops_query)
     
     rows = []
-    print("Total of " + str(len(predictable_mops)) + " tupels")
+    print("Base MOP " + mop0_label  + "yields a total of " + str(len(predictable_mops)) + " tupels")
     i=0
     for tupel in predictable_mops:
         i = i+1
@@ -83,8 +82,8 @@ for mop0 in mop0_list:
         else:
             print("Syntheses loaded")
         
-        R_M1 = mops_synthesis.getInputAssociatedWithCBU(syn1,M1.instance_iri)
-        R_M2 = mops_synthesis.getInputAssociatedWithCBU(syn2,M1.instance_iri)
+        R_M1 = mops_synthesis.getInputAssociatedWithCBU(syn1,M1.instance_iri,syn_client)
+        R_M2 = mops_synthesis.getInputAssociatedWithCBU(syn2,M1.instance_iri,syn_client)
         print("Reactants loaded")
 
         crit1a = mop1.hasAssemblyModel == mop0.hasAssemblyModel
@@ -95,7 +94,7 @@ for mop0 in mop0_list:
         crit5a = mop1.hasAssemblyModel == mop2.hasAssemblyModel
         crit5b = mop0.hasAssemblyModel == mopx.hasAssemblyModel
         crit6 = mops_synthesis.compareBindingSites(L0,L2)
-        crit7 = mops_synthesis.compareSolvents(syn2,syn0)
+        crit7 = mops_synthesis.compareSolvents(syn2,syn0,syn_client)
         print("Criteria checked")
 
         rows.append({

@@ -1,7 +1,8 @@
+import os
 import sys
-
-import twa.data_model
-import twa.data_model.base_ontology
+parent = parent = os.path.abspath('')
+sys.path.append(parent)
+sys.path.append('..')
 import twa.kg_operations
 import os
 current = os.path.dirname(os.path.realpath(__file__))
@@ -15,7 +16,7 @@ import twa
 ontosyn_client = twa.kg_operations.PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted')
 ontospecies_client = twa.kg_operations.PySparqlClient(credentials.ONTOSPECIES_ENDPOINT, 'restricted')
 
-synthesis_iris = ['https://www.theworldavatar.com/kg/OntoSyn/ChemicalSynthesis_77e0b25c-976c-4bf4-8204-888cbae7361d']
+synthesis_iris = ['https://www.theworldavatar.com/kg/OntoSyn/ChemicalSynthesis_4a30ec7b-5794-4ded-a603-6dfecdbb4a45']
 syns = ontosyn.ChemicalSynthesis.pull_from_kg(iris=synthesis_iris,sparql_client=ontosyn_client,recursive_depth=-1)
 
 def getMaterial(material,name=''):
@@ -69,6 +70,7 @@ def getHeatingInstructions(step):
         instr+="\n under vacuum"
     if list(step.isSealed)[0]:
         instr+="\n while sealed"
+    return instr
 
 def getStep(step):
     order = list(step.hasOrder)[0]
@@ -92,7 +94,7 @@ def getStep(step):
             sepType = list(step.isSeparationType)[0]
             instr += "via " + list(sepType.rdfs_label)[0]
         case ontosyn.Dissolve:
-            solvent = list(step.hasDissolveSolvent)[0]
+            solvent = list(step.hasSolventDissolve)[0]
             solvMat = getMaterial(list(solvent.referencesMaterial)[0])
             instr += "Dissolve in " + solvMat
         case ontosyn.Transfer:
@@ -163,8 +165,12 @@ def getStep(step):
         stepDur = list(step.hasStepDuration)[0]
         stepDurVal = getValue(stepDur,"undefined duration")
         instr+="\n for " + stepDurVal
-    
-    comment = list(step.rdfs_comment)[0]
+
+    if len(step.rdfs_comment) > 0:
+         comment = list(step.rdfs_comment)[0]
+    else:
+        comment = ""
+
     if comment != "" and comment != "N/A":
         instr+="\n comment: " + comment
 

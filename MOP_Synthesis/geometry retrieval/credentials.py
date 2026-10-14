@@ -1,2 +1,0 @@
-SPARQL_ENDPOINT = ''
-FILE_SERVER = ''

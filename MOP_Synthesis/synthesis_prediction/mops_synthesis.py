@@ -139,9 +139,9 @@ def compareHeating(syn1,syn2):
     else:
         return False
 
-def compareSolvents(syn1,syn2):
-    S1 = getSolvent(syn1)
-    S2 = getSolvent(syn2)
+def compareSolvents(syn1,syn2,client):
+    S1 = getSolvent(syn1,client)
+    S2 = getSolvent(syn2,client)
     if S1 == False or S2 == False:
         return False
     return S1==S2 

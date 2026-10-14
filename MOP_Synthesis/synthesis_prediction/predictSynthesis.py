@@ -1,7 +1,6 @@
 import os
 import sys
-current = os.path.dirname(os.path.realpath(__file__))
-parent = os.path.dirname(current)
+parent = parent = os.path.abspath('')
 sys.path.append(parent)
 sys.path.append('..')
 from twa.kg_operations import PySparqlClient
@@ -17,7 +16,7 @@ MOP1_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_ab2
 MOP2_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_ea080404-38bb-462e-a885-49f48daca41e"
 
 
-anchor_amount = 30.0
+anchor_amount = 50.0
 mass_unit = 'milligram'
 volume_unit = 'millilitre'
 temp_unit = 'celsius'
@@ -29,7 +28,7 @@ syn_client = PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted', fs_url=c
 mops_client = PySparqlClient(credentials.ONTOMOPS_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
 mops = list()
 for mop_iri in mop_iris:
-    mops.append(ontomops.MetalOrganicPolyhedron.pull_from_kg(mop_iri,mops_client,2)[0])
+    mops.append(ontomops.MetalOrganicPolyhedron.pull_from_kg(mop_iri,mops_client,3)[0])
 
 
 syn0 = mops_synthesis.getMOPSynthesis(mops[0],syn_client)
@@ -81,8 +80,8 @@ amount_S = ADD_S[2].copy()
 amount_S[0] = solvent_ratio[3] * (amount_M[0] + amount_L[0])
 
 text = f"""
-    Dissolve {round(amount_M[0],2)} {amount_M[1]} of {list(reactant_M.rdfs_label)[0]} 
-    and {round(amount_L[0],2)} {amount_L[1]} of {list(reactant_L.rdfs_label)[0]} 
+    Dissolve {round(amount_M[0],1)} {amount_M[1]} of {list(reactant_M.rdfs_label)[0]} 
+    and {round(amount_L[0],1)} {amount_L[1]} of {list(reactant_L.rdfs_label)[0]} 
     in {round(amount_S[0],1)} {amount_S[1]} of {list(solvent.rdfs_label)[0]} along with a few drops of distilled water. 
     Heat the mixture at {round(heating[0][0],1)} {heating[0][1]} for {round(heating[1][0],1)} {heating[1][1]}. 
     Crystallise under static conditions, then allow to cool to room temperature in air. 
