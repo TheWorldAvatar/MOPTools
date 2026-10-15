@@ -1,5 +1,8 @@
+# Retrieve the synthesis procedure(s) of the given MOP(s) from OntoSyn and print them as a human-readable recipe:
+# chemical inputs, ordered synthesis steps with conditions, and yield.
 import os
 import sys
+# make the shared modules in the repo root importable
 parent = parent = os.path.abspath('')
 sys.path.append(parent)
 sys.path.append('..')
@@ -14,9 +17,11 @@ import credentials
 import twa
 import queryMOPs
 
+# clients for the synthesis KG and for OntoSpecies (used to check whether species are known there)
 ontosyn_client = twa.kg_operations.PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted')
 ontospecies_client = twa.kg_operations.PySparqlClient(credentials.ONTOSPECIES_ENDPOINT, 'restricted')
 
+# pull all syntheses of the listed MOP formulas
 mops = ['[Zr3O(OH)3(C5H5)3]4[(C6H3)(CO2)3]4']
 syn_query = queryMOPs.getSynthesis(mops)
 syn_response = ontosyn_client.perform_query(syn_query)
@@ -25,6 +30,7 @@ for syn in syn_response:
     syn_iris.append(syn['chemSyn'])
 syns = ontosyn.ChemicalSynthesis.pull_from_kg(iris=syn_iris,sparql_client=ontosyn_client,recursive_depth=-1)
 
+# describe a material as "<amount> of <species>" for each of its components, flagging species missing in OntoSpecies
 def getMaterial(material,name=''):
     thermoBehaviour=list(material.thermodynamicBehaviour)[0]
     subsystems=list(thermoBehaviour.isComposedOfSubsystem)
@@ -49,14 +55,12 @@ def getMaterial(material,name=''):
 
     return(matString)
 
+# "<value><unit>" of a quantity, or defaultString if no value is given (stored as 0.0 N/A)
 def getValue(meas,defaultString="unknown"):
     if len(meas.hasValue) == 1:
         val = list(meas.hasValue)[0]
         numVal=list(val.hasNumericalValue)[0]
-        if isinstance(val, (ontosyn.ScalarValue, ontosyn.om.Measure)):
-            unit=list(val.hasUnit)[0]
-        else:
-            unit=list(val.hasUnitOfMeasure)[0]
+        unit=list(val.hasUnit)[0]
         unitLab=list(unit.rdfs_label)[0]
         if numVal==0.0 and unitLab=="N/A":
             amount = defaultString
@@ -66,6 +70,7 @@ def getValue(meas,defaultString="unknown"):
         amount = defaultString
     return amount
 
+# text for a HeatChill step
 def getHeatingInstructions(step):
     temp = list(step.hasTargetTemperature)[0]
     tempVal = getValue(temp, "unknown temperature")
@@ -78,6 +83,7 @@ def getHeatingInstructions(step):
         instr+="\n while sealed"
     return instr
 
+# text for one synthesis step: step-type specific part, followed by vessel, atmosphere, duration and comment
 def getStep(step):
     order = list(step.hasOrder)[0]
     instr="Step " + str(order) + ": "
@@ -110,7 +116,7 @@ def getStep(step):
             newVesselType = list(newVessel.hasVesselType)[0]
             newVesselTypeLab = list(newVesselType.rdfs_label)[0]
             instr += "Transfer " + amount + " to " + newVesselLab + " (" + newVesselTypeLab +")"
-            if list(step.isLayered)[0]:
+            if list(step.isLayeredTransfer)[0]:
                 instr+=" in a layered fashion "
         case ontosyn.Sonicate:
             instr+="Sonicate"
@@ -156,6 +162,7 @@ def getStep(step):
             if list(step.hasRotaryEvaporator)[0]:
                 instr+="\n with rotary evaporator"
 
+    # information common to all step types
     vessel = list(step.hasVessel)[0]
     vesselLab = list(vessel.rdfs_label)[0]
     vesselType = list(vessel.hasVesselType)[0]
@@ -183,8 +190,9 @@ def getStep(step):
     return instr
 
 
+# print the full recipe of one synthesis
 def printSynthesis(synthesis):
-    MOP = "a"
+    # find the MOP produced by this synthesis to print its formula
     query = "SELECT ?chemOut WHERE { ?trans <" + ontosyn.IsDescribedBy.predicate_iri + "> <" + synthesis.instance_iri + "> ; <" + ontosyn.HasChemicalOutput.predicate_iri + "> ?chemOut . }"
     chemOutResp = ontosyn_client.perform_query(query)
     chemOut = chemOutResp[0]['chemOut']

@@ -1,5 +1,9 @@
+# Step 1 of the synthesis prediction: for each base MOP_0, find all candidate tuples (MOP_x, MOP_1, MOP_2)
+# (see queryMOPs.getCandidateTuples) and rank them by how well the known syntheses of MOP_0, MOP_1 and MOP_2
+# are expected to transfer to MOP_x. Writes one CSV per base MOP.
 import os
 import sys
+# make the shared modules in the repo root importable
 parent = parent = os.path.abspath('')
 sys.path.append(parent)
 sys.path.append('..')
@@ -11,12 +15,15 @@ import ontomops
 import ontosyn
 import mops_synthesis
 
+# base MOPs (MOP_0) for which candidate tuples are searched
 Zr_H2BDC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H4)(CO2)2]6"
 Zr_H3BTC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H3)(CO2)3]4"
 Zr_H2BPDC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H4)2(CO2)2]6"
 
+# True: MOP_x is a computationally assembled (novel) MOP, False: MOP_x is an experimentally reported MOP
 MOP_NOVELTY = True
 
+# provenance DOIs of the assembled MOPs, MOP_1 and MOP_2 must not stem from these
 ASSEMBLED_MOP_DOI_1 = "10.1021/jacs.2c03402"
 ASSEMBLED_MOP_DOI_2 = "10.1039/D5DD00069F"
 assembled_mop_dois = [ASSEMBLED_MOP_DOI_1,ASSEMBLED_MOP_DOI_2]
@@ -24,6 +31,7 @@ assembled_mop_dois = [ASSEMBLED_MOP_DOI_1,ASSEMBLED_MOP_DOI_2]
 mops_client = PySparqlClient(credentials.ONTOMOPS_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
 syn_client = PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
 
+# retrieve the base MOPs
 mops_query = queryMOPs.getMOPIRI([Zr_H2BDC_MOP,Zr_H3BTC_MOP,Zr_H2BPDC_MOP])
 mops_response = mops_client.perform_query(mops_query)
 mop0_iris = []
@@ -33,6 +41,7 @@ mop0_list = ontomops.MetalOrganicPolyhedron.pull_from_kg(mop0_iris,mops_client,0
 
 for mop0 in mop0_list:
 
+    # find all candidate tuples for this base MOP
     mop0_label = list(mop0.hasMOPFormula)[0]
     mops_query = queryMOPs.getCandidateTuples(mop0_label,assembled_mop_dois,MOP_NOVELTY)
     predictable_mops = mops_client.perform_query(mops_query)
@@ -51,12 +60,14 @@ for mop0 in mop0_list:
         [mop2] = ontomops.MetalOrganicPolyhedron.pull_from_kg(tupel['MOP_2'],mops_client,0)
         print("MOPs loaded")
 
+        # metal CBUs (M0 of MOP_0/MOP_x, M1 of MOP_1/MOP_2) and organic CBUs (L0 of MOP_0/MOP_1, L2 of MOP_x/MOP_2)
         [M0] = ontomops.ChemicalBuildingUnit.pull_from_kg(tupel['metalCBU_0'],mops_client,1)
         [M1] = ontomops.ChemicalBuildingUnit.pull_from_kg(tupel['metalCBU_2'],mops_client,1)
         [L0] = ontomops.ChemicalBuildingUnit.pull_from_kg(tupel['organicCBU_0'],mops_client,1)
         [L2] = ontomops.ChemicalBuildingUnit.pull_from_kg(tupel['organicCBU_x'],mops_client,1)
         print("CBUs loaded")
 
+        # load the syntheses of the three known MOPs, the tuple is skipped (marked '-') if any of them is missing
         syn0 = mops_synthesis.getMOPSynthesis(mop0,syn_client)
         syn1 = mops_synthesis.getMOPSynthesis(mop1,syn_client)
         syn2 = mops_synthesis.getMOPSynthesis(mop2,syn_client)
@@ -85,10 +96,13 @@ for mop0 in mop0_list:
         else:
             print("Syntheses loaded")
         
+        # metal reactants used in the syntheses of MOP_1 and MOP_2 (both contain the metal CBU M1)
         R_M1 = mops_synthesis.getInputAssociatedWithCBU(syn1,M1.instance_iri,syn_client)
         R_M2 = mops_synthesis.getInputAssociatedWithCBU(syn2,M1.instance_iri,syn_client)
         print("Reactants loaded")
 
+        # strong criteria (weight 0.2): same assembly models (AM) across the square, similar heating temperature, same metal reactant
+        # weak criteria (weight 0.1): same publication, same AM for all four MOPs, same ligand binding fragment, same solvent
         crit1a = mop1.hasAssemblyModel == mop0.hasAssemblyModel
         crit1b = mop2.hasAssemblyModel == mopx.hasAssemblyModel
         crit2 = mops_synthesis.compareHeating(syn2,syn1)
@@ -119,6 +133,7 @@ for mop0 in mop0_list:
         print("========")
         print("")
 
+    # collect the scores of all tuples and save them
     syn_crit = pd.DataFrame(rows,columns=["id","MOPx","MOP1","MOP2","AM1=AM0","AM2=AMx","T2=T1","RM1=RM2","P1=P2","AM1=AM2","AM0=AMx","BL0=BL2","S2=S0","criteria"])
     if MOP_NOVELTY is True:
         novel_string = "novel"

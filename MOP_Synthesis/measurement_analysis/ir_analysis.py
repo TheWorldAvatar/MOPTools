@@ -1,5 +1,8 @@
+# Plot a measured FTIR spectrum of a synthesised MOP against IR references of the involved metal precursor,
+# ligand and solvent, and mark the MOP peaks expected from the literature (stored in OntoSyn).
 import os
 import sys
+# make the shared modules in the repo root importable
 parent = os.path.abspath('')
 sys.path.append(parent)
 sys.path.append('..')
@@ -11,10 +14,12 @@ import credentials
 import os
 import numpy as np
 
-Zr_H2BDC_MOP_IRI = "mop:MetalOrganicPolyhedra_e67c729f-f153-4742-9fee-e00c623d151b"
-Zr_H3BTC_MOP_IRI = "mop:MetalOrganicPolyhedra_1d52f054-9421-4aac-bd29-76d8a9519ccb"
-Zr_H2BPDC_MOP_IRI = "mop:MetalOrganicPolyhedra_3d71c19a-ab54-4993-8c94-267dcfe41792"
+# MOPs whose literature IR peaks are stored in the KG
+Zr_H2BDC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H4)(CO2)2]6"
+Zr_H3BTC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H3)(CO2)3]4"
+Zr_H2BPDC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H4)2(CO2)2]6"
 
+# reference spectra files (tab-separated wavenumber / intensity) in exp_folder_path
 DMA_IR_REF = "DMA-Transmittance.0.dpt"
 DMF_IR_REF = "DMF-Transmittance.0.dpt"
 DIW_IR_REF = "DIW-Transmittance.0.dpt"
@@ -32,18 +37,21 @@ file = "zrcl2cp2andh3btc.0.dpt"
 sample_nr = 1
 solvent_reference = DMF_IR_REF
 ligand_reference = H3BTC_IR_REF
-MOP_peaks = Zr_H3BTC_MOP_IRI
+MOP_peaks = Zr_H3BTC_MOP
 ###
+# load the measured spectrum and the references
 data = pd.read_csv(os.path.join(exp_folder_path,file), delimiter='\t', header=None, names=['wavenumber', 'intensity'])
 ref_metal = pd.read_csv(os.path.join(exp_folder_path,Zr_IR_REF), delimiter='\t', header=None, names=['wavenumber', 'intensity'])
 ref_ligand = pd.read_csv(os.path.join(exp_folder_path,ligand_reference), delimiter='\t', header=None, names=['wavenumber', 'intensity'])
 ref_solvent = pd.read_csv(os.path.join(exp_folder_path,solvent_reference), delimiter='\t', header=None, names=['wavenumber', 'intensity'])
 ref_water = pd.read_csv(os.path.join(exp_folder_path,DIW_IR_REF), delimiter='\t', header=None, names=['wavenumber', 'intensity'])
 
+# expected MOP peaks from the KG
 sparql_client = PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
 peaks = sparql_client.perform_query(queryMOPs.getIRPeaks(MOP_peaks))
 #print(peaks)
 
+# plot spectra; -log10 converts transmittance to absorbance
 #plt.plot(ref_metal['wavenumber'], -np.log10(ref_metal['intensity']), color='tan', linewidth=1, label='Metal IR reference')
 #plt.plot(ref_ligand['wavenumber'], -np.log10(ref_ligand['intensity']), color='grey', linewidth=1, label='Ligand IR reference')
 plt.plot(ref_solvent['wavenumber'], -np.log10(ref_solvent['intensity']), color='skyblue', linewidth=1, label='Solvent IR reference')
@@ -53,6 +61,7 @@ plt.plot(ref_ligand['wavenumber'], ref_ligand['intensity'], color='grey', linewi
 plt.plot(data['wavenumber'], data['intensity'], color='green', linewidth=3, label='IR experiment')
 
 
+# sort the expected peaks by strength and draw them as vertical lines
 min_i = min(data['intensity'])-0.5
 max_i = max(data['intensity'])+0.5
 verystrong = []

@@ -1,5 +1,9 @@
+# Step 2 of the synthesis prediction: predict a synthesis recipe for MOP_x from the syntheses of the known
+# MOPs MOP_0 (same metal CBU), MOP_2 (same organic CBU) and MOP_1 (metal of MOP_2 + ligand of MOP_0),
+# e.g. a tuple selected with selectCandidates.py. Prints the recipe as text.
 import os
 import sys
+# make the shared modules in the repo root importable
 parent = parent = os.path.abspath('')
 sys.path.append(parent)
 sys.path.append('..')
@@ -11,6 +15,7 @@ import mops_synthesis
 import queryMOPs
 
 ############### DEF ##############
+# MOP formulas of the tuple, the target amount of metal reactant and the units for the output
 MOPX = "[Zr3O(OH)3(C5H5)3]4[(C6H4C)2(CO2)2]6"
 MOP0 = "[Zr3O(OH)3(C5H5)3]4[(C6H3)(CO2)3]4"
 MOP1 = "[V6O6(OCH3)9(SO4)]4[(C6H3)(CO2)3]4"
@@ -25,6 +30,7 @@ time_unit = 'hour'
 syn_client = PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
 mops_client = PySparqlClient(credentials.ONTOMOPS_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
 
+# pull the four MOPs (indices 0, 1, 2, 3=x) and the syntheses of the three known ones
 mop_list=[MOP0,MOP1,MOP2,MOPX]
 mops = list()
 for mop in mop_list:
@@ -39,6 +45,7 @@ syn1 = mops_synthesis.getMOPSynthesis(mops[1],syn_client)
 syn2 = mops_synthesis.getMOPSynthesis(mops[2],syn_client)
 
 
+# sort the CBUs of each MOP into metal (CBU_M) and organic (CBU_L) CBUs
 CBU_M=['','','','']
 CBU_L=['','','','']
 for i, mop in enumerate(mops):
@@ -49,6 +56,7 @@ for i, mop in enumerate(mops):
             CBU_L[i] = cbu 
 
 
+# MOP_x uses the metal reactant and heating program of MOP_0 and the ligand reactant and solvent of MOP_2
 reactant_M = mops_synthesis.getInputAssociatedWithCBU(syn0,CBU_M[3].instance_iri,syn_client)
 reactant_L = mops_synthesis.getInputAssociatedWithCBU(syn2,CBU_L[3].instance_iri,syn_client)
 solvent = mops_synthesis.getSolvent(syn2,syn_client)
@@ -56,6 +64,7 @@ heating = mops_synthesis.getMainHeating(syn0)
 heating[0] = mops_synthesis.convertUnit(heating[0],temp_unit)
 heating[1] = mops_synthesis.convertUnit(heating[1],time_unit)
 
+# added amounts of metal reactant, ligand reactant and solvent in the three known syntheses
 ADD_S=['','','']
 ADD_M=['','','']
 ADD_L=['','',''] 
@@ -68,12 +77,14 @@ for i, syn in enumerate([syn0,syn1,syn2]):
     ADD_S[i] = mops_synthesis.getSolventAmount(syn,syn_client)
     ADD_S[i] = mops_synthesis.convertUnit(ADD_S[i],volume_unit)
 
+# metal-to-ligand mass ratio of MOP_x by analogy: (M/L)_x = (M/L)_0 * (M/L)_2 / (M/L)_1
 amount_M = [anchor_amount, mass_unit]
 
 M_L_ratio = ADD_M[2][0]*ADD_L[1][0]*ADD_M[0][0]/(ADD_M[1][0]*ADD_L[2][0]*ADD_L[0][0])
 amount_L = amount_M.copy()
 amount_L[0] = amount_M[0] / M_L_ratio
 
+# solvent volume per total reactant mass, transferred to MOP_x by the same analogy
 solvent_ratio=[0,0,0,0]
 for i in range(0,3):
     solvent_ratio[i] = ADD_S[i][0] / (ADD_M[i][0]+ADD_L[i][0])
@@ -82,6 +93,7 @@ solvent_ratio[3] = solvent_ratio[2]/solvent_ratio[1]*solvent_ratio[0]
 amount_S = ADD_S[2].copy()
 amount_S[0] = solvent_ratio[3] * (amount_M[0] + amount_L[0])
 
+# assemble the predicted recipe
 text = f"""
     Dissolve {round(amount_M[0],1)} {amount_M[1]} of {list(reactant_M.rdfs_label)[0]} 
     and {round(amount_L[0],1)} {amount_L[1]} of {list(reactant_L.rdfs_label)[0]} 
