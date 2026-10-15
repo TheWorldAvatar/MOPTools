@@ -28,7 +28,7 @@ def getAddedAmountsAssociatedWithCBU(syn,cbu_iri,client):
             spec = getSpecies(input)
             if cbu_spec == spec:
                 for step in list(syn.hasSynthesisStep):
-                    if step.__class__ == ontosyn.Add:
+                    if isinstance(step,ontosyn.Add):
                         chemIn = list(step.hasAddedChemicalInput)[0]
                         if chemIn == input:
                             mat=list(chemIn.referencesMaterial)[0]
@@ -42,7 +42,7 @@ def getAddedAmountsAssociatedWithCBU(syn,cbu_iri,client):
 
 def getSolvent(syn,client):
     for step in syn.hasSynthesisStep:
-        if step.__class__ == ontosyn.Dissolve:
+        if isinstance(step,ontosyn.Dissolve):
             solventInput = list(step.hasSolventDissolve)[0]
             solvent_iri = getSpecies(solventInput)
             if type(solvent_iri) is str:
@@ -54,7 +54,7 @@ def getSolvent(syn,client):
 
 def getSolventAmount(syn,client):
     for step in syn.hasSynthesisStep:
-        if step.__class__ == ontosyn.Dissolve:
+        if isinstance(step,ontosyn.Dissolve):
             solventInput = list(step.hasSolventDissolve)[0]
             mat=list(solventInput.referencesMaterial)[0]
             phase=list(mat.thermodynamicBehaviour)[0]
@@ -76,7 +76,7 @@ def getValue(meas):
 def getMainHeating(syn):
     heating=[]
     for step in syn.hasSynthesisStep:
-        if step.__class__ == ontosyn.HeatChill:
+        if isinstance(step,ontosyn.HeatChill):
             stepTemp=list(step.hasTargetTemperature)[0]
             stepTempVal=getValue(stepTemp)
             if stepTempVal[1]=="kelvin":

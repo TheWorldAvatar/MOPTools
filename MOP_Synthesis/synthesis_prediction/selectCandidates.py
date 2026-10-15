@@ -11,11 +11,9 @@ import ontomops
 import ontosyn
 import mops_synthesis
 
-Zr_H2BDC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_e67c729f-f153-4742-9fee-e00c623d151b"
-Zr_H3BTC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_1d52f054-9421-4aac-bd29-76d8a9519ccb"
-Zr_H2BPDC_MOP_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_3d71c19a-ab54-4993-8c94-267dcfe41792"
-
-mop0_iris = [Zr_H2BDC_MOP_IRI,Zr_H3BTC_MOP_IRI]
+Zr_H2BDC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H4)(CO2)2]6"
+Zr_H3BTC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H3)(CO2)3]4"
+Zr_H2BPDC_MOP = "[Zr3O(OH)3(C5H5)3]4[(C6H4)2(CO2)2]6"
 
 MOP_NOVELTY = True
 
@@ -25,13 +23,18 @@ assembled_mop_dois = [ASSEMBLED_MOP_DOI_1,ASSEMBLED_MOP_DOI_2]
 
 mops_client = PySparqlClient(credentials.ONTOMOPS_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
 syn_client = PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
-mop0_list = ontomops.MetalOrganicPolyhedron.pull_from_kg(mop0_iris,mops_client,0)
 
+mops_query = queryMOPs.getMOPIRI([Zr_H2BDC_MOP,Zr_H3BTC_MOP,Zr_H2BPDC_MOP])
+mops_response = mops_client.perform_query(mops_query)
+mop0_iris = []
+for mop0_iri in mops_response:
+    mop0_iris.append(mop0_iri['mop'])
+mop0_list = ontomops.MetalOrganicPolyhedron.pull_from_kg(mop0_iris,mops_client,0)
 
 for mop0 in mop0_list:
 
     mop0_label = list(mop0.hasMOPFormula)[0]
-    mops_query = queryMOPs.simple_query(mop0_label,assembled_mop_dois,ASSEMBLED_MOP_DOI_1,MOP_NOVELTY)
+    mops_query = queryMOPs.simple_query(mop0_label,assembled_mop_dois,MOP_NOVELTY)
     predictable_mops = mops_client.perform_query(mops_query)
     
     rows = []

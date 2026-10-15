@@ -12,12 +12,18 @@ sys.path.append('..')
 import ontosyn
 import credentials
 import twa
+import queryMOPs
 
 ontosyn_client = twa.kg_operations.PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted')
 ontospecies_client = twa.kg_operations.PySparqlClient(credentials.ONTOSPECIES_ENDPOINT, 'restricted')
 
-synthesis_iris = ['https://www.theworldavatar.com/kg/OntoSyn/ChemicalSynthesis_4a30ec7b-5794-4ded-a603-6dfecdbb4a45']
-syns = ontosyn.ChemicalSynthesis.pull_from_kg(iris=synthesis_iris,sparql_client=ontosyn_client,recursive_depth=-1)
+mops = ['[Zr3O(OH)3(C5H5)3]4[(C6H3)(CO2)3]4']
+syn_query = queryMOPs.getSynthesis(mops)
+syn_response = ontosyn_client.perform_query(syn_query)
+syn_iris = []
+for syn in syn_response:
+    syn_iris.append(syn['chemSyn'])
+syns = ontosyn.ChemicalSynthesis.pull_from_kg(iris=syn_iris,sparql_client=ontosyn_client,recursive_depth=-1)
 
 def getMaterial(material,name=''):
     thermoBehaviour=list(material.thermodynamicBehaviour)[0]
@@ -47,7 +53,7 @@ def getValue(meas,defaultString="unknown"):
     if len(meas.hasValue) == 1:
         val = list(meas.hasValue)[0]
         numVal=list(val.hasNumericalValue)[0]
-        if val.__class__ == ontosyn.ScalarValue or val.__class__ == ontosyn.om.Measure:
+        if isinstance(val, (ontosyn.ScalarValue, ontosyn.om.Measure)):
             unit=list(val.hasUnit)[0]
         else:
             unit=list(val.hasUnitOfMeasure)[0]
@@ -75,7 +81,7 @@ def getHeatingInstructions(step):
 def getStep(step):
     order = list(step.hasOrder)[0]
     instr="Step " + str(order) + ": "
-    match step.__class__:
+    match type(step):
         case ontosyn.Add:
             addedChemical=list(step.hasAddedChemicalInput)[0]
             instr+="Add " + getMaterial(list(addedChemical.referencesMaterial)[0])
@@ -161,7 +167,7 @@ def getStep(step):
     if vesselEnvLab != "N/A":
         instr+="\n under " + vesselEnvLab
 
-    if step.__class__ != ontosyn.Filter:
+    if not isinstance(step, ontosyn.Filter):
         stepDur = list(step.hasStepDuration)[0]
         stepDurVal = getValue(stepDur,"undefined duration")
         instr+="\n for " + stepDurVal

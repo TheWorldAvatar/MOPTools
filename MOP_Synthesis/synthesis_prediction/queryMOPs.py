@@ -14,14 +14,14 @@ MATERIAL_TO_SPECIES_PRED = "<http://www.theworldavatar.com/ontology/ontocape/mat
 PAPER1_DOI = "10.1021/jacs.2c03402"
 PAPER2_DOI = "Placeholder DOI for TWA OGM"
 
-def simple_query(mop0_label,assembled_mop_dois,synthesisable_mop_doi,novel):
+def simple_query(mop0_label,assembled_mop_dois,novel):
 
         assembled_mops = str(assembled_mop_dois)[1:-1]
 
         if novel is True:
-                mop_x_filter = f"""FILTER (?DOI_x IN ('{synthesisable_mop_doi}'))"""
+                mop_x_filter = f"""FILTER (?DOI_x IN ('{PAPER1_DOI}'))"""
         else:
-                mop_x_filter = f"""FILTER (?DOI_x NOT IN ({assembled_mops}))"""
+                mop_x_filter = f"""FILTER (?DOI_x NOT IN ('{PAPER1_DOI}',{PAPER2_DOI}))"""
 
         query = f"""
         {PREFIX_ONTOMOPS}
@@ -67,20 +67,17 @@ def simple_query(mop0_label,assembled_mop_dois,synthesisable_mop_doi,novel):
 
         return query
 
-def getSynthesis(mop):
+def getMOPIRI(mop_list):
+        mop_string = "{" + " ".join(f'"{item}"' for item in mop_list) + "}"
         query = f"""
-        {PREFIX_ONTOSYN}
+        {PREFIX_ONTOMOPS}
 
-        SELECT DISTINCT ?chemSyn
+        SELECT DISTINCT ?mop
         WHERE {{
-        ?chemOut syn:isRepresentedBy <{mop}> .
-        ?chemTrans syn:hasChemicalOutput ?chemOut ;
-                        syn:isDescribedBy ?chemSyn .
-        ?chemSyn a syn:ChemicalSynthesis ;
-                syn:hasSynthesisStep ?step .
+        ?mop mop:hasMOPFormula ?mopF .
+        VALUES ?mopF { mop_string }
         }}
         """
-
         return query
 
 

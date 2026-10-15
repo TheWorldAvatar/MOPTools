@@ -8,13 +8,13 @@ import credentials
 import ontomops
 import ontosyn
 import mops_synthesis
+import queryMOPs
 
 ############### DEF ##############
-MOPX_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_3511edb7-557d-4977-af06-d90ad048635b"
-MOP0_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_1d52f054-9421-4aac-bd29-76d8a9519ccb"
-MOP1_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_ab2e7008-a512-4149-a033-23f675ac2249"
-MOP2_IRI = "https://www.theworldavatar.com/kg/ontomops/MetalOrganicPolyhedra_ea080404-38bb-462e-a885-49f48daca41e"
-
+MOPX = "[Zr3O(OH)3(C5H5)3]4[(C6H4C)2(CO2)2]6"
+MOP0 = "[Zr3O(OH)3(C5H5)3]4[(C6H3)(CO2)3]4"
+MOP1 = "[V6O6(OCH3)9(SO4)]4[(C6H3)(CO2)3]4"
+MOP2 = "[V6O6(OCH3)9(SO4)]4[(C6H4C)2(CO2)2]6"
 
 anchor_amount = 50.0
 mass_unit = 'milligram'
@@ -22,12 +22,15 @@ volume_unit = 'millilitre'
 temp_unit = 'celsius'
 time_unit = 'hour'
 ##################################
-mop_iris = [MOP0_IRI,MOP1_IRI,MOP2_IRI,MOPX_IRI]
-
 syn_client = PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
 mops_client = PySparqlClient(credentials.ONTOMOPS_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
+
+mop_list=[MOP0,MOP1,MOP2,MOPX]
 mops = list()
-for mop_iri in mop_iris:
+for mop in mop_list:
+    mops_query = queryMOPs.getMOPIRI([mop])
+    mops_response = mops_client.perform_query(mops_query)
+    mop_iri = mops_response[0]['mop']
     mops.append(ontomops.MetalOrganicPolyhedron.pull_from_kg(mop_iri,mops_client,3)[0])
 
 
@@ -40,7 +43,7 @@ CBU_M=['','','','']
 CBU_L=['','','','']
 for i, mop in enumerate(mops):
     for cbu in mop.hasChemicalBuildingUnit:
-        if list(cbu.hasBindingSite)[0].__class__ == ontomops.MetalSite:
+        if isinstance(list(cbu.hasBindingSite)[0],ontomops.MetalSite):
             CBU_M[i] = cbu
         else:
             CBU_L[i] = cbu 

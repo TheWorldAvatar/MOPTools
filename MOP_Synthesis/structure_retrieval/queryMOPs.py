@@ -2,9 +2,30 @@ PREFIX_ONTOMOPS = "PREFIX mop: <https://www.theworldavatar.com/kg/ontomops/>"
 PREFIX_ONTOSPECIES = "PREFIX spec: <http://www.theworldavatar.com/ontology/ontospecies/OntoSpecies.owl#>"
 PREFIX_UNITSOFMEASURE = "PREFIX om: <http://www.ontology-of-units-of-measure.org/resource/om-2/>"
 PREFIX_RDFS = "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>"
+PREFIX_ONTOSYN = "PREFIX syn: <https://www.theworldavatar.com/kg/OntoSyn/>"
 
-JACS_PAPER_IRI  = "mop:Provenance_f1518a4f-652a-4fd7-a418-6676e1bccb6d"
-OGM_PAPER_IRI = "mop:Provenance_362c640f-2430-47cf-888f-cc0a4a857dd9"
+
+JACS_PAPER_DOI  = "10.1021/jacs.2c03402"
+OGM_PAPER_DOI = "10.1039/D5DD00069F"
+
+def getSynthesis(mop_list):
+        mop_string = "{" + " ".join(f'"{item}"' for item in mop_list) + "}"
+        query = f"""
+        {PREFIX_ONTOSYN}
+        {PREFIX_ONTOMOPS}
+
+        SELECT DISTINCT ?chemSyn
+        WHERE {{
+        ?chemOut syn:isRepresentedBy/mop:hasMOPFormula ?mopF .
+        VALUES ?mopF { mop_string }
+        ?chemTrans syn:hasChemicalOutput ?chemOut ;
+                        syn:isDescribedBy ?chemSyn .
+        ?chemSyn a syn:ChemicalSynthesis ;
+                syn:hasSynthesisStep ?step .
+        }}
+        """
+
+        return query
 
 def construct(known=False,charge=None,shape=None,cbu=None,gbu=None):
     known_query = ""
@@ -14,7 +35,7 @@ def construct(known=False,charge=None,shape=None,cbu=None,gbu=None):
     gbu_query = ""
     
     if known:
-        known_query = f"""FILTER (?prov NOT IN ({JACS_PAPER_IRI}, {OGM_PAPER_IRI}))"""
+        known_query = f"""FILTER (?doi NOT IN ("{JACS_PAPER_DOI}", "{OGM_PAPER_DOI}"))"""
 
     if charge is not None:
         charge_query = f"""
