@@ -9,7 +9,7 @@ def step_types_prompt():
     """
     # prompt text
     prompt                              = """Task Description:
-    Write a JSON file that organizes synthesis steps. Indicate wheter the type of a step is used in the following synthesis procedure. 
+    Write a JSON file that organizes synthesis steps. Indicate whether the type of a step is used in the following synthesis procedure. 
     If so write True to for the respective step name and false otherwise. Make sure to fill in all the requried fields.
 
     Synthesis Text: 
@@ -66,7 +66,7 @@ def step_prompt(doi, dynamic_prompt):
 
     Category Specifications:
     {category_spec}
-    Group Steps: Categorize all synthesis steps into their respective groups (Add, HeatChill, Filter, Stirr, Sonicate, Crystallize, Evaporate, Transfer, Dissolve, or Dry) while maintaining their original chronological order.
+    Group Steps: Categorize all synthesis steps into their respective groups (Add, HeatChill, Filter, Stir, Sonicate, Crystallize, Evaporate, Transfer, Dissolve, or Dry) while maintaining their original chronological order.
     Assign Step Numbers: Retain the original step number from the input. If steps are omitted or split into several steps correct the number in the other synthesis steps as well. There should never be duplicate step numbers.
     If multiple chemical species are added or used as washing solvent etc. in one step make a new entry for each chemical. For all ChemicalAmount entries if the chemical is a mixture make sure to enter the amount for all components either by specifying the absolute amount as the names
     (Example: for 10 mL ethanol and 20 mL water write: "addedChemical":[{{"addedChemicalName":["ethanol"],"addedChemicalAmount":"10 mL"}}, {{"addedChemicalName":["water"],"addedChemicalAmount":"20 mL"}}] 
@@ -121,6 +121,8 @@ def chemical_prompt(doi):
 
     Return:
     Make sure to extract the input and output chemicals for for all {len(mop_formula)} mops in the text.
+
+    Provided text:
     """         
     return prompt 
     
@@ -136,7 +138,7 @@ def pre_steps_prompt():
     # Define the structured prompt that guides the LLM in extracting synthesis steps
     prompt          = f""" 
         Step-by-Step Instructions: Break down each synthesis procedure into precise and sequential steps. Each procedure should stand alone and not reference any other procedures or require shared understanding.
-        Assign the steps in categories of Add, Heat chill, Filter, Stirr, Dry, Evaporate, Dissolve, Transfer, Separate, and Sonicate. Make sure to break down the synthesis in precise, sequential and standalone steps. 
+        Assign the steps in categories of Add, Heat chill, Filter, Stir, Dry, Evaporate, Dissolve, Transfer, Separate, and Sonicate. Make sure to break down the synthesis in precise, sequential and standalone steps. 
         Make sure to return all described procedures. 
         Category specification: 
         Add is a step where material is added to a mixture or vessel this also includes acidify. Make sure to assign each chemical addition to an independent step. Also be carefull about the order of additions. Don't strictly follow the order the chemicals are listed in the procedure but in order they are added.
@@ -146,7 +148,7 @@ def pre_steps_prompt():
         assign each entry to a new step for each temperature. Each Heat and cooling step requires a target temperature to which is heated or cooled.
         Make sure to assign the heating rate to the step with the assigned target temperature. 
         Filter is a step in which a solid is extracted by filtration or washed with a solvent. Each filtration and washing should be listed as separate steps.
-        Stirr is a step where a mixture is stirred for a certain time without heating, cooling, adding or filtering material. If the procedure mentions waiting for a certain time assign it to stir and mention stirringrate = 0. Other words for wait are "stand", "age", or static vacuum. 
+        Stir is a step where a mixture is stirred for a certain time without heating, cooling, adding or filtering material. If the procedure mentions waiting for a certain time assign it to stir and mention stirringrate = 0. Other words for wait are "stand", "age", or static vacuum. 
         Crystallize: Crystallize dissolved solid by ramping temperature to given temp over given time.
         Sonication describes the use of a sonication device for a certain time. 
         Dry: Drying process that can involve a pressure and temperature. 
@@ -171,13 +173,15 @@ def pre_steps_prompt():
         4. **Filter:** Remove the white precipitate (TEA·HCl) by filtration of the content of vessel 1.
         5. **Add:** Add Cu(OAc)2·H2O (144 mg) into a new vessel called vessel 2.
         6. **Add:** Add 6 mL of DMF into a scintilation vial refered to as vessel 2 containing Cu(OAc)2·H2O.
-        7. **Stirr:** Stir the solution in vessel 2 for 10 minutes until the color turns blue-violet (solution A).
+        7. **Stir:** Stir the solution in vessel 2 for 10 minutes until the color turns blue-violet (solution A).
         8. **Add:** Dissolve H25-Br-mBDC (36 mg) product vessel 1 in 2.4 mL of DMF.
         9. **Add:** Mix 2.2 mL of solution A from vessel 2 with the dissolved H25-Br-mBDC from vessel 1 in a capped vial (20 mL) vessel 3.
         10. **HeatChill:** Heat the mixture in vessel 3 to 85 °C at a constant rate and maintain for 14 hours.
         11. **Filter:** Collect the green cubic crystals formed by washing with 3 × 2 mL of DMF.
         12. **Filter:** Wash the crystals with 2 × 1 mL of cyclohexane.
         **Comment:** Yield: 18 mg, 24% based on H25-Br-mBDC. MOP Formula: [Cu2]12[(C6H3Br)(CO2)2]24, CCDC Number: 706816.
+
+        Provided text:
         """
     return prompt
 
@@ -291,7 +295,7 @@ def cbu_prompt(doi):
         \n"""
     # Append specific MOP, CBU, and species matching instructions for each MOP
     for i, species in enumerate(species_list):
-        prompt                         += (f"The {i+1}th Mop has CCDC number: {mop_list[i]}. The MOP has the following two chemical building units (CBUs): {cbu_list[i]}, assign respecting equivalent(s) from the following list of chemicals: {species} \n")
+        prompt                         += (f"The {i+1}th MOP has CCDC number: {mop_list[i]}. The MOP has the following two chemical building units (CBUs): {cbu_list[i]}, assign respecting equivalent(s) from the following list of chemicals: {species} \n")
     # Print the generated prompt for debugging
     print("prompt: ", prompt)
     return prompt, True
@@ -348,6 +352,8 @@ def characterisation_prompt(doi):
     Make sure to extract the peaks and bands for all {len(mop_formula)} mops in the text.
     For each synthesis procedure, fill in the relevant details under the specified categories.
     If any information is missing or unclear, use "N/A" as a placeholder.
+
+    Synthesis text:
                 """
     return prompt
 # output prompt

@@ -57,7 +57,13 @@ class Measure(BaseClass):
     hasUnit: HasUnit[Unit]
     hasNumericalValue: HasNumericalValue[float]
 
-# TODO need to find a better way for defining the units
-gramPerMole = OM.namespace_iri + 'gramPerMole'
-elementaryCharge = OM.namespace_iri + 'elementaryCharge'
-angstrom = OM.namespace_iri + 'angstrom'
+
+gramPerMole = UnitDivision(
+    instance_iri=OM.namespace_iri + 'gramPerMole'
+)
+elementaryCharge = SingularUnit(
+    instance_iri=OM.namespace_iri + 'elementaryCharge'
+)
+angstrom = SingularUnit(
+    instance_iri=OM.namespace_iri + 'angstrom'
+)
