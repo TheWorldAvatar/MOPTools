@@ -41,7 +41,7 @@ ref_solvent = pd.read_csv(os.path.join(exp_folder_path,solvent_reference), delim
 ref_water = pd.read_csv(os.path.join(exp_folder_path,DIW_IR_REF), delimiter='\t', header=None, names=['wavenumber', 'intensity'])
 
 sparql_client = PySparqlClient(credentials.ONTOSYN_ENDPOINT, 'restricted', fs_url=credentials.FILE_SERVER, fs_user=credentials.FS_USER, fs_pwd=credentials.FS_PW)
-peaks = sparql_client.perform_query(queryMOPs.construct(MOP_peaks))
+peaks = sparql_client.perform_query(queryMOPs.getIRPeaks(MOP_peaks))
 #print(peaks)
 
 #plt.plot(ref_metal['wavenumber'], -np.log10(ref_metal['intensity']), color='tan', linewidth=1, label='Metal IR reference')

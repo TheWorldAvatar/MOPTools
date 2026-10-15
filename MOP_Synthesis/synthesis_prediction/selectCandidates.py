@@ -34,11 +34,11 @@ mop0_list = ontomops.MetalOrganicPolyhedron.pull_from_kg(mop0_iris,mops_client,0
 for mop0 in mop0_list:
 
     mop0_label = list(mop0.hasMOPFormula)[0]
-    mops_query = queryMOPs.simple_query(mop0_label,assembled_mop_dois,MOP_NOVELTY)
+    mops_query = queryMOPs.getCandidateTuples(mop0_label,assembled_mop_dois,MOP_NOVELTY)
     predictable_mops = mops_client.perform_query(mops_query)
     
     rows = []
-    print("Base MOP " + mop0_label  + "yields a total of " + str(len(predictable_mops)) + " tupels")
+    print("Base MOP " + mop0_label  + " yields a total of " + str(len(predictable_mops)) + " tupels")
     i=0
     for tupel in predictable_mops:
         i = i+1

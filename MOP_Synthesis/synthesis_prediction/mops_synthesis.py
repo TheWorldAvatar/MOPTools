@@ -5,7 +5,7 @@ from pint import UnitRegistry
 
 
 def getMOPSynthesis(mop,client): 
-    syn_iri = client.perform_query(queryMOPs.getSynthesis(mop))
+    syn_iri = client.perform_query(queryMOPs.getSynthesis(mop.hasMOPFormula))
     if len(list(syn_iri)) != 1:
         return False
     else:
