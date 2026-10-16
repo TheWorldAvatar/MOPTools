@@ -19,8 +19,8 @@ MATERIAL_TO_SPECIES_PRED = "<http://www.theworldavatar.com/ontology/ontocape/mat
 PAPER1_DOI = "10.1021/jacs.2c03402"
 PAPER2_DOI = "Placeholder DOI for TWA OGM"
 
-# IRIs of the OntoSyn ChemicalSynthesis instances whose chemical output is one of the given MOP formulas
 def getSynthesis(mop_list):
+        """IRIs of the OntoSyn ChemicalSynthesis instances whose chemical output is one of the given MOP formulas."""
         mop_string = "{" + " ".join(f'"{item}"' for item in mop_list) + "}"
         query = f"""
         {PREFIX_ONTOSYN}
@@ -39,9 +39,10 @@ def getSynthesis(mop_list):
 
         return query
 
-# MOP formula, charge, shape, geometry file and DOI of all MOPs, optionally narrowed down by the given criteria
-# (each argument adds one optional block to the WHERE clause)
 def getMOPs(known=False,charge=None,shape=None,cbu=None,gbu=None):
+    """MOP formula, charge, shape, geometry file and DOI of all MOPs, optionally narrowed down by the given criteria
+    (each argument adds one optional block to the WHERE clause).
+    """
     known_query = ""
     charge_query = ""
     shape_query = ""
@@ -97,8 +98,8 @@ def getMOPs(known=False,charge=None,shape=None,cbu=None,gbu=None):
 
     return query
 
-# location and strength label (e.g. 'vs', 's', 'm') of the FTIR peaks reported for a MOP (prefixed IRI, e.g. mop:...)
 def getIRPeaks(mop):
+    """Location and strength label (e.g. 'vs', 's', 'm') of the FTIR peaks reported for the MOP with the given MOP formula."""
     query = f"""
     {PREFIX_ONTOMOPS}
     {PREFIX_ONTOSPECIES}
@@ -115,12 +116,13 @@ def getIRPeaks(mop):
 
     return query
 
-# Candidate tuples (MOP_x, MOP_1, MOP_2) for predicting the synthesis of MOP_x from the base MOP_0, i.e. the "square":
-#   MOP_0 = M0 + L0 (known)    MOP_x = M0 + Lx (target)
-#   MOP_1 = M2 + L0 (known)    MOP_2 = M2 + Lx (known)
-# MOP_1 and MOP_2 must be experimentally reported (DOI not in `assembled_mop_dois`).
-# `novel` = True searches for MOP_x among the assembled MOPs, otherwise among the reported ones.
 def getCandidateTuples(mop0_label,assembled_mop_dois,novel):
+        """Candidate tuples (MOP_x, MOP_1, MOP_2) for predicting the synthesis of MOP_x from the base MOP_0, i.e. the "square":
+           MOP_0 = M0 + L0 (known)    MOP_x = M0 + Lx (target)
+           MOP_1 = M2 + L0 (known)    MOP_2 = M2 + Lx (known)
+        MOP_1 and MOP_2 must be experimentally reported (DOI not in `assembled_mop_dois`).
+        `novel` = True searches for MOP_x among the assembled MOPs, otherwise among the reported ones.
+        """
 
         # turns ['a', 'b'] into "'a', 'b'" for the SPARQL IN (...) filters
         assembled_mops = str(assembled_mop_dois)[1:-1]
@@ -178,8 +180,8 @@ def getCandidateTuples(mop0_label,assembled_mop_dois,novel):
 
         return query
 
-# IRIs of the MOPs with the given MOP formulas
 def getMOPIRI(mop_list):
+        """IRIs of the MOPs with the given MOP formulas."""
         mop_string = "{" + " ".join(f'"{item}"' for item in mop_list) + "}"
         query = f"""
         {PREFIX_ONTOMOPS}

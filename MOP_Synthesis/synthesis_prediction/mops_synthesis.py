@@ -6,8 +6,8 @@ import ontomops
 from pint import UnitRegistry
 
 
-# pull the (unique) ChemicalSynthesis of a MOP from OntoSyn, returns False if there is none or more than one
 def getMOPSynthesis(mop,client): 
+    """Pull the (unique) ChemicalSynthesis of a MOP from OntoSyn, returns False if there is none or more than one."""
     syn_iri = client.perform_query(queryMOPs.getSynthesis(mop.hasMOPFormula))
     if len(list(syn_iri)) != 1:
         return False
@@ -16,17 +16,18 @@ def getMOPSynthesis(mop,client):
         return syn
 
 
-# species of a ChemicalInput (ChemicalInput -> Material -> SinglePhase -> first PhaseComponent -> Species)
 def getSpecies(chemicalInput):
+    """Species of a ChemicalInput (ChemicalInput -> Material -> SinglePhase -> first PhaseComponent -> Species)."""
     material=list(chemicalInput.referencesMaterial)[0]
     thermoBehaviour=list(material.thermodynamicBehaviour)[0]
     subsystems=list(thermoBehaviour.isComposedOfSubsystem)
     species = list(subsystems[0].representsOccurenceOf)[0]
     return(species)
 
-# [value, unit] of the amount added in the Add step whose chemical input is the species used as the given CBU
-# returns False if no such input / Add step exists
 def getAddedAmountsAssociatedWithCBU(syn,cbu_iri,client):
+    """[value, unit] of the amount added in the Add step whose chemical input is the species used as the given CBU.
+    Returns False if no such input / Add step exists.
+    """
     cbu = ontomops.ChemicalBuildingUnit.pull_from_kg(cbu_iri,client,0)
     cbu_specs = list(cbu[0].isUsedAsChemical)
     for cbu_spec in cbu_specs:
@@ -47,8 +48,8 @@ def getAddedAmountsAssociatedWithCBU(syn,cbu_iri,client):
                             return addVal
     return False
 
-# solvent species of the first Dissolve step (pulled from the KG if only its IRI is known)
 def getSolvent(syn,client):
+    """Solvent species of the first Dissolve step (pulled from the KG if only its IRI is known)."""
     for step in syn.hasSynthesisStep:
         if isinstance(step,ontosyn.Dissolve):
             solventInput = list(step.hasSolventDissolve)[0]
@@ -60,8 +61,8 @@ def getSolvent(syn,client):
                 return solvent_iri                
     return False
 
-# [value, unit] of the solvent amount used in the first Dissolve step
 def getSolventAmount(syn,client):
+    """[value, unit] of the solvent amount used in the first Dissolve step."""
     for step in syn.hasSynthesisStep:
         if isinstance(step,ontosyn.Dissolve):
             solventInput = list(step.hasSolventDissolve)[0]
@@ -75,17 +76,18 @@ def getSolventAmount(syn,client):
     return False
 
 
-# [numerical value, unit label] of an OM quantity
 def getValue(meas):
+    """[numerical value, unit label] of an OM quantity."""
     val = list(meas.hasValue)[0]
     numVal=list(val.hasNumericalValue)[0]
     unit=list(val.hasUnit)[0]
     unitLab=list(unit.rdfs_label)[0]
     return [numVal,unitLab]
 
-# [[temperature, unit], [duration, unit]] of the "main" HeatChill step,
-# i.e. the step with the largest temperature * duration product (in celsius * hours)
 def getMainHeating(syn):
+    """[[temperature, unit], [duration, unit]] of the "main" HeatChill step,
+    i.e. the step with the largest temperature * duration product (in celsius * hours).
+    """
     heating=[]
     for step in syn.hasSynthesisStep:
         if isinstance(step,ontosyn.HeatChill):
@@ -112,8 +114,8 @@ def getMainHeating(syn):
         i+=1
     return heating[i_max]
 
-# convert a [value, unit label] pair in place to the target unit via pint (spaces in unit labels become underscores)
 def convertUnit(scalar,unit):
+    """Convert a [value, unit label] pair in place to the target unit via pint (spaces in unit labels become underscores)."""
     ureg = UnitRegistry(autoconvert_offset_to_baseunit = True)
     temp=scalar[0]*ureg.parse_expression(scalar[1].replace(' ','_'))
     temp=temp.to(ureg(unit))
@@ -121,8 +123,8 @@ def convertUnit(scalar,unit):
     scalar[1]=unit
     return scalar
 
-# reactant species of the synthesis that is used as the given CBU, returns False if not found
 def getInputAssociatedWithCBU(syn,cbu_iri,client):
+    """Reactant species of the synthesis that is used as the given CBU, returns False if not found."""
     cbu = ontomops.ChemicalBuildingUnit.pull_from_kg(cbu_iri,client,0)
     cbu_specs = list(cbu[0].isUsedAsChemical)
     for cbu_spec in cbu_specs:
@@ -137,8 +139,8 @@ def getInputAssociatedWithCBU(syn,cbu_iri,client):
     return False
 
 
-# True if both CBUs have the same set of binding fragments (e.g. CO2)
 def compareBindingSites(L0,L2):
+    """True if both CBUs have the same set of binding fragments (e.g. CO2)."""
     bs0_type = []
     bs2_type = []
     for bs in list(L0.hasBindingSite):
@@ -147,8 +149,8 @@ def compareBindingSites(L0,L2):
         bs2_type.append(list(bs.hasBindingFragment)[0])
     return set(bs0_type)==set(bs2_type)
 
-# True if the main heating temperatures of both syntheses differ by less than 10 % (of syn1's temperature)
 def compareHeating(syn1,syn2):
+    """True if the main heating temperatures of both syntheses differ by less than 10 % (of syn1's temperature)."""
     heat1 = getMainHeating(syn1)
     heat2 = getMainHeating(syn2)
     if abs(heat1[0][0]-heat2[0][0]) < 0.1*heat1[0][0]:
@@ -156,8 +158,8 @@ def compareHeating(syn1,syn2):
     else:
         return False
 
-# True if both syntheses use the same solvent in their Dissolve step
 def compareSolvents(syn1,syn2,client):
+    """True if both syntheses use the same solvent in their Dissolve step."""
     S1 = getSolvent(syn1,client)
     S2 = getSolvent(syn2,client)
     if S1 == False or S2 == False:

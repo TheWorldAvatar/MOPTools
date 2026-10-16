@@ -30,8 +30,8 @@ for syn in syn_response:
     syn_iris.append(syn['chemSyn'])
 syns = ontosyn.ChemicalSynthesis.pull_from_kg(iris=syn_iris,sparql_client=ontosyn_client,recursive_depth=-1)
 
-# describe a material as "<amount> of <species>" for each of its components, flagging species missing in OntoSpecies
 def getMaterial(material,name=''):
+    """Describe a material as "<amount> of <species>" for each of its components, flagging species missing in OntoSpecies."""
     thermoBehaviour=list(material.thermodynamicBehaviour)[0]
     subsystems=list(thermoBehaviour.isComposedOfSubsystem)
 
@@ -55,8 +55,8 @@ def getMaterial(material,name=''):
 
     return(matString)
 
-# "<value><unit>" of a quantity, or defaultString if no value is given (stored as 0.0 N/A)
 def getValue(meas,defaultString="unknown"):
+    """Quantity as "<value><unit>" string, or defaultString if no value is given (stored as 0.0 N/A)."""
     if len(meas.hasValue) == 1:
         val = list(meas.hasValue)[0]
         numVal=list(val.hasNumericalValue)[0]
@@ -70,8 +70,8 @@ def getValue(meas,defaultString="unknown"):
         amount = defaultString
     return amount
 
-# text for a HeatChill step
 def getHeatingInstructions(step):
+    """Text for a HeatChill step."""
     temp = list(step.hasTargetTemperature)[0]
     tempVal = getValue(temp, "unknown temperature")
     tempRate = list(step.hasTemperatureRate)[0]
@@ -83,8 +83,8 @@ def getHeatingInstructions(step):
         instr+="\n while sealed"
     return instr
 
-# text for one synthesis step: step-type specific part, followed by vessel, atmosphere, duration and comment
 def getStep(step):
+    """Text for one synthesis step: step-type specific part, followed by vessel, atmosphere, duration and comment."""
     order = list(step.hasOrder)[0]
     instr="Step " + str(order) + ": "
     match type(step):
@@ -190,8 +190,8 @@ def getStep(step):
     return instr
 
 
-# print the full recipe of one synthesis
 def printSynthesis(synthesis):
+    """Print the full recipe of one synthesis."""
     # find the MOP produced by this synthesis to print its formula
     query = "SELECT ?chemOut WHERE { ?trans <" + ontosyn.IsDescribedBy.predicate_iri + "> <" + synthesis.instance_iri + "> ; <" + ontosyn.HasChemicalOutput.predicate_iri + "> ?chemOut . }"
     chemOutResp = ontosyn_client.perform_query(query)
