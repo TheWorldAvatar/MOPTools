@@ -1,11 +1,13 @@
 from __future__ import annotations
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple, Set
 from scipy.optimize import fsolve
+from datetime import datetime
 import plotly.express as px
 import pandas as pd
 import numpy as np
 import math
 import json
+import os
 
 from twa.data_model.base_ontology import BaseOntology, BaseClass, ObjectProperty, DatatypeProperty, KnowledgeGraph
 import ontospecies
@@ -88,6 +90,8 @@ TranslationVectorToAlignOrigin = DatatypeProperty.create_from_base('TranslationV
 # for pore ring
 HasProbingVector = DatatypeProperty.create_from_base('HasProbingVector', OntoMOPs)
 
+# for ordering binding/connecting points within GBU/CBU
+HasOrder = DatatypeProperty.create_from_base("HasOrder", OntoMOPs)
 
 # classes
 class MolecularCage(BaseClass):
@@ -127,6 +131,14 @@ class GenericBuildingUnit(BaseClass):
     @property
     def is_4_planar(self):
         return list(self.hasGBUType)[0].label == '4-planar'
+
+    @property
+    def is_2_bent(self):
+        return list(self.hasGBUType)[0].label == GBU_TYPE_2_BENT
+
+    @property
+    def is_2_linear(self):
+        return list(self.hasGBUType)[0].label == GBU_TYPE_2_LINEAR
 
     @property
     def modularity(self):
@@ -176,6 +188,13 @@ class AssemblyModel(BaseClass):
     hasGBUCoordinateCenter: HasGBUCoordinateCenter[GBUCoordinateCenter]
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
     hasPoreRing: Optional[HasPoreRing[PoreRing]] = None
+
+    @property
+    def ordered_coordinate_center(self)-> list[GBUCoordinateCenter]:
+        return sorted(
+            list(self.hasGBUCoordinateCenter),
+            key=lambda cc:list(cc.hasOrder)[0]
+        )
 
     def visualise(self):
         rows = []
@@ -251,14 +270,19 @@ class AssemblyModel(BaseClass):
 
         # handle position blocks `{"Label": "5-pyramidal", ...}`
         # TODO the part that getting the gbu_type_1 and gbu_type_2 can be optimised
+        center_order = 0
         for i in range(len(am_json)):
             if am_json[i]['Label'] in [gbu_type_1_label, gbu_type_2_label]:
                 coord = GBUCoordinateCenter(
                     hasX=am_json[i]['X'],
                     hasY=am_json[i]['Y'],
                     hasZ=am_json[i]['Z'],
-                    hasGBUConnectingPoint=[connecting_point_dict[d] for d in am_json[i]['ClosestDummies']]
+                    hasGBUConnectingPoint=[
+                        connecting_point_dict[d] for d in am_json[i]['ClosestDummies']
+                    ], # gbu_type_label=am_json[i]['Label']
+                    hasOrder=center_order
                 )
+                center_order+=1
                 if am_json[i]['Label'] in coordinate_point_dict:
                     coordinate_point_dict[am_json[i]['Label']].append(coord)
                 else:
@@ -295,6 +319,12 @@ class AssemblyModel(BaseClass):
         gbu1 = GenericBuildingUnit(hasGBUType=gbu_type_1, hasGBUCoordinateCenter=coordinate_point_dict[gbu_type_1.label])
         gbu2 = GenericBuildingUnit(hasGBUType=gbu_type_2, hasGBUCoordinateCenter=coordinate_point_dict[gbu_type_2.label])
 
+        # assign GBU type to each GBU coordinate center so can determine how to calculate connecting point plane later
+        for _gcc in gbu1.hasGBUCoordinateCenter:
+            _gcc.hasGBUType = gbu1.hasGBUType
+        for _gcc in gbu2.hasGBUCoordinateCenter:
+            _gcc.hasGBUType = gbu2.hasGBUType
+
         return cls(
             hasGenericBuildingUnit=[gbu1, gbu2],
             hasGenericBuildingUnitNumber=[
@@ -312,9 +342,9 @@ class AssemblyModel(BaseClass):
     @property
     def pairs_of_connected_gbus(self) -> Dict:
         pairs = {}
-        for cc in self.hasGBUCoordinateCenter:
+        for cc in self.ordered_coordinate_center:
             cc: GBUCoordinateCenter
-            cps = list(cc.hasGBUConnectingPoint)
+            cps = cc.ordered_connecting_points
             for cp in cps:
                 if cp.instance_iri not in pairs:
                     pairs[cp.instance_iri] = [cc]
@@ -347,6 +377,7 @@ class BindingSite(BaseClass):
     hasBindingPoint: HasBindingPoint[BindingPoint]
     hasBindingFragment: HasBindingFragment[str]
     temporarily_blocked: Optional[bool] = False
+    hasOrder: Optional[HasOrder[int]] = None
 
     @property
     def binding_coordinates(self) -> Point:
@@ -384,8 +415,8 @@ class BindingSite(BaseClass):
         sorted_atoms = self.binding_coordinates.rank_distance_to_points(atoms)
         all_binding_atoms = []
         for atom, num in counts.items():
-            all_binding_atoms.extend([a for a in sorted_atoms if a.label == atom][:num])
-        return all_binding_atoms
+            all_binding_atoms.extend([a for a in sorted_atoms if a.label == atom][:num]) # assuming that the binding fragment atoms will be first in the atoms sorted by distance from the dummy atom
+        return all_binding_atoms # list of points objects
 
     @staticmethod
     def compute_assembly_center_from_binding_sites(
@@ -404,9 +435,11 @@ class BindingSite(BaseClass):
             # to find the assembly center of the CBU
             # even the assembly center is overshooting from the molecule
             # the sin/cos calculations will make sure its coordinates is transformed correctly
-            cbu_binding_sites_plane = Plane.fit_from_points(lst_binding_points)
-            cbu_binding_sites_circumcenter = Point.fit_circle_2d(lst_binding_points)[0]
             cbu_geo_center = Point.centroid(atom_points)
+            #cbu_binding_sites_plane = Plane.fit_from_points(lst_binding_points)# positive_ref_point=cbu_geo_center)
+            cbu_binding_sites_plane = Plane.fit_from_points(lst_binding_points, positive_ref_point=cbu_geo_center)
+            cbu_binding_sites_circumcenter = Point.fit_circle_2d(lst_binding_points)[0]
+
             line = Line(point=cbu_binding_sites_circumcenter, direction=cbu_binding_sites_plane.normal)
             cbu_assemb_center = line.project_point(cbu_geo_center)
         else:
@@ -439,6 +472,28 @@ class BindingSite(BaseClass):
                     plane_of_bs = Plane.from_three_points(pt1=intersection, pt2=lst_binding_points[0], pt3=lst_binding_points[1])
                     perpendicular_bisector = plane_of_bs.find_perpendicular_bisector_on_plane(*lst_binding_points)
                     cbu_assemb_center = perpendicular_bisector.project_point(intersection)
+                elif binding_fragment == BINDING_FRAGMENT_N2:
+                    # first find the closest two O atoms and the C atoms for each binding sites
+                    v_dct = {}
+                    lst_pts_for_plane = []
+                    for bs in lst_binding_sites:
+                        bp: Point = bs.binding_coordinates
+                        ranked_atoms = bp.rank_distance_to_points(atom_points)
+                        closest_two_N = [a for a in ranked_atoms if a.label == 'N'][:2]
+                        third_C = [a for a in ranked_atoms if a.label == 'C'][2]
+                        # find the average of the O atoms and use it to form line with the closest C atom
+                        avg_N = Point.mid_point(*closest_two_N)
+                        v_dct[bs.instance_iri] = {'avg_N': avg_N, 'third_C': third_C, 'line': Line.from_two_points(start=avg_N, end=third_C)}
+                        lst_pts_for_plane.extend([third_C, avg_N])
+                    # find the plane from these points
+                    plane = Plane.fit_from_points(lst_pts_for_plane)
+                    # find the intersection of these lines when they are projected on the plane
+                    proj_lines = [v['line'] for v in v_dct.values()]
+                    intersection = plane.find_intersection_of_lines_projected(*proj_lines)
+                    # use the intersection and two binding site to form the plane
+                    plane_of_bs = Plane.from_three_points(pt1=intersection, pt2=lst_binding_points[0], pt3=lst_binding_points[1])
+                    perpendicular_bisector = plane_of_bs.find_perpendicular_bisector_on_plane(*lst_binding_points)
+                    cbu_assemb_center = perpendicular_bisector.project_point(intersection)
                 else:
                     raise NotImplementedError(f'CBUs functioning as a {gbu_type} with binding fragment {binding_fragment} is not yet supported.')
         return CBUAssemblyCenter(hasX=cbu_assemb_center.x, hasY=cbu_assemb_center.y, hasZ=cbu_assemb_center.z)
@@ -458,11 +513,18 @@ class DirectBinding(BindingDirection):
 class SidewayBinding(BindingDirection):
     pass
 
+
+DIRECT_BINDING = DirectBinding(
+    instance_iri=OntoMOPs.namespace_iri + '/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a'
+)
+
 class GBUConnectingPoint(CoordinatePoint):
-    pass
+    hasOrder: Optional[HasOrder[int]] = None
 
 class GBUCoordinateCenter(CoordinatePoint):
     hasGBUConnectingPoint: HasGBUConnectingPoint[GBUConnectingPoint]
+    hasGBUType: Optional[HasGBUType[GenericBuildingUnitType]] = None
+    hasOrder: Optional[HasOrder[int]] = None
 
     @property
     def vector_from_am_center(self) -> Vector:
@@ -472,45 +534,74 @@ class GBUCoordinateCenter(CoordinatePoint):
     @property
     def distance_to_am_center(self):
         return self.coordinates.get_distance_to(Point(x=0, y=0, z=0))
+    
+    @property
+    def ordered_connecting_points(self) -> list[GBUConnectingPoint]:
+        return sorted(
+            list(self.hasGBUConnectingPoint),
+            key=lambda cp: list(cp.hasOrder)[0] if cp.hasOrder else 0
+        )
 
+    
     @property
     def vector_to_connecting_point_plane(self):
-        # TODO add safeguards for str IRIs
-        connecting_points = [p.coordinates for p in self.hasGBUConnectingPoint]
+        """
+        Normal vector for the connecting-point geometry.
+        Uses the parent's GBU type via a back-reference (_parent_gbu) set during AM construction.
+        Falls back gracefully if the back-ref is missing.
+        """
+        gbu_type = list(self.hasGBUType)[0].label if self.hasGBUType else ""
+
+        connecting_points = [p.coordinates for p in self.ordered_connecting_points]
+
         if len(connecting_points) < 3:
             line = Line.from_two_points(start=connecting_points[0], end=connecting_points[1])
-            if line.is_point_on_line(self.coordinates):
-                # if the center point is on the line then we take the normal vector of the line
-                # the normal vector has to be on the plane formed by the connecting points and the AM center point
-                # i.e. Point(0, 0, 0)
-                # TODO check if it is safe to make this assumption for all CBUs
+
+            if "2-linear" in gbu_type:
+                # 2-linear: use normal at AM center
                 _v = line.normal_vector_from_point_to_line(Point(x=0, y=0, z=0))
-                # flip it to point in the direction of center
-                v = Vector.from_array(-_v.as_array)
-            else:
+                v = Vector.from_array(_v.as_array)
+            elif "2-bent" in gbu_type:
+                # 2-bent (default if unknown): use normal at this coordinate center
                 v = line.normal_vector_from_point_to_line(self.coordinates)
+            else:
+                raise ValueError(f"Cannot determine GBU type for GBUCoordinateCenter; "
+                                 f"required to decide between 2-linear and 2-bent. "
+                                 f"Found: '{gbu_type}'")
         else:
-            plane = Plane.fit_from_points([bs for bs in connecting_points], Point(x=0, y=0, z=0))
+            plane = Plane.fit_from_points(connecting_points, Point(x=0, y=0, z=0))
             v = plane.normal
         return v
+
+
 
     @property
     def vector_to_farthest_connecting_point(self):
         # find the plane perpendicular to the vector to the average connecting point
-        plane = Plane.from_point_and_normal(self.coordinates, self.vector_to_connecting_point_plane)
+        plane = Plane.from_point_and_normal(
+            self.coordinates, self.vector_to_connecting_point_plane
+        )
         # project all connecting points onto the plane
-        projected_points = [plane.project_point(p.coordinates) for p in self.hasGBUConnectingPoint]
+        projected_points = [
+            plane.project_point(p.coordinates) for p in self.ordered_connecting_points
+        ]
         # find the farthest connecting point and construct a vector from center to it
         farthest_projected_point = self.coordinates.farthest_point(projected_points)
-        vector = Vector.from_two_points(start=self.coordinates, end=farthest_projected_point)
+        vector = Vector.from_two_points(
+            start=self.coordinates, end=farthest_projected_point
+        )
         return vector
 
     @property
     def vector_to_shortest_side(self):
         # find the plane perpendicular to the vector to the average connecting point
-        plane = Plane.from_point_and_normal(self.coordinates, self.vector_to_connecting_point_plane)
+        plane = Plane.from_point_and_normal(
+            self.coordinates, self.vector_to_connecting_point_plane
+        )
         # project all connecting points onto the plane
-        projected_points = [plane.project_point(p.coordinates) for p in self.hasGBUConnectingPoint]
+        projected_points = [
+            plane.project_point(p.coordinates) for p in self.ordered_connecting_points
+        ]
         # find the closest pair of connecting points and construct a vector connecting the center to the line connecting them
         closest_pair = Point.closest_pair(projected_points)
         line = Line.from_two_points(start=closest_pair[0], end=closest_pair[1])
@@ -520,16 +611,357 @@ class GBUCoordinateCenter(CoordinatePoint):
 class CBUAssemblyCenter(CoordinatePoint):
     pass
 
+
+################# Molecular Fragments #################
+## Object properties
+HasFragmentType = ObjectProperty.create_from_base('HasFragmentType', OntoMOPs)
+HasMolecularFragment = ObjectProperty.create_from_base('HasMolecularFragment', OntoMOPs)
+HasSideChainFragment = ObjectProperty.create_from_base('HasSideChainFragment', OntoMOPs)
+IsIsomerOf = ObjectProperty.create_from_base('IsIsomerOf', OntoMOPs)
+
+
+## Data properties
+HasSmiles = DatatypeProperty.create_from_base('HasSmiles', OntoMOPs)
+HasDummyAtomicNumber = DatatypeProperty.create_from_base('HasDummyAtomicNumber', OntoMOPs)
+HasMolBlock = DatatypeProperty.create_from_base('HasMolBlock', OntoMOPs)
+HasMolecularFormula = DatatypeProperty.create_from_base('HasMolecularFormula', OntoMOPs)
+HasLinkerFragmentOrder = DatatypeProperty.create_from_base('HasLinkerFragmentOrder', OntoMOPs)
+IsLinearFragment = DatatypeProperty.create_from_base('IsLinearFragment', OntoMOPs)
+IsCyclicFragment = DatatypeProperty.create_from_base('IsCyclicFragment', OntoMOPs)
+HasNumDummyAtoms = DatatypeProperty.create_from_base('HasNumDummyAtoms', OntoMOPs)
+HasFragmentOrder = DatatypeProperty.create_from_base('HasFragmentOrder', OntoMOPs)
+
+
+class FragmentType(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    hasNumDummyAtoms: HasNumDummyAtoms[int] = None
+
+    @property
+    def num_dummy_atoms(self) -> int:
+        return list(self.hasNumDummyAtoms)[0]
+
+class BindingFragment(FragmentType):
+    hasOuterCoordinationNumber: HasOuterCoordinationNumber[int]
+    hasBindingFragment: HasBindingFragment[str]
+    hasNumDummyAtoms: HasNumDummyAtoms[int] = 1
+    hasBindingDirection: HasBindingDirection[BindingDirection]
+
+class NodeFragment(FragmentType):
+    hasNumDummyAtoms: HasNumDummyAtoms[int]
+    
+class LinkerFragment(FragmentType):
+    # Indicates whether the linker fragment is cyclic (True) or acyclic (False).
+    isCyclic: Optional[IsLinearFragment[bool]] = None
+    isLinear: Optional[IsCyclicFragment[bool]] = None
+    hasNumDummyAtoms: HasNumDummyAtoms[int] = 2
+    isIsomerOf: Optional[IsIsomerOf[LinkerFragment]] = None
+
+    @property
+    def is_linear(self) -> bool:
+        return list(self.isLinear)[0] if self.isLinear else False
+
+    @property
+    def is_cyclic(self) -> bool:
+        return list(self.isCyclic)[0] if self.isCyclic else False
+
+class SideChainFragment(FragmentType):
+    hasNumDummyAtoms: HasNumDummyAtoms[int] = 1
+
+class MolecularFragment(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    hasCharge: ontospecies.HasCharge[ontospecies.Charge]
+    hasMolecularWeight: ontospecies.HasMolecularWeight[ontospecies.MolecularWeight]
+    hasMolecularFormula: HasMolecularFormula[str]
+    hasGeometry: ontospecies.HasGeometry[ontospecies.Geometry]
+    hasFragmentType: HasFragmentType[FragmentType]
+    hasSmiles: HasSmiles[str]
+    hasDummyAtomicNumber: HasDummyAtomicNumber[int]
+    hasSideChainFragments: Optional[HasSideChainFragment[MolecularFragment]] = None
+
+    @property
+    def charge(self):
+        return list(list(list(self.hasCharge)[0].hasValue)[0].hasNumericalValue)[0]
+
+    @property
+    def molecular_weight(self):
+        return list(list(list(self.hasMolecularWeight)[0].hasValue)[0].hasNumericalValue)[0]
+    
+    @property
+    def molecular_formula(self):
+        return list(self.hasMolecularFormula)[0]
+    
+    @property
+    def smiles(self):
+        return list(self.hasSmiles)[0]
+    
+    @property
+    def is_node_fragment(self):
+        return isinstance(list(self.hasFragmentType)[0], NodeFragment)
+    
+    @property
+    def is_linker_fragment(self):
+        return isinstance(list(self.hasFragmentType)[0], LinkerFragment)
+    
+    @property
+    def is_binding_fragment(self):
+        return isinstance(list(self.hasFragmentType)[0], BindingFragment)   
+    
+    @property
+    def fragment_type(self) -> FragmentType:
+        """
+        Returns the fragment type of the molecular fragment.
+        """
+        return list(self.hasFragmentType)[0]
+    
+    def get_mol_block(self, sparql_client) -> str:
+        """
+        Returns the mol file contents of the molecular fragment.
+        """
+        if hasattr(self, "_mol_block"):
+            return self._mol_block
+        
+        geometry_fpath = list(self.hasGeometry)[0].geometry_file
+        download_fpath = geometry_fpath.split('/')[-1]
+
+        if os.path.exists(geometry_fpath):
+            with open(geometry_fpath, 'r') as f:
+                self._mol_block = f.read()
+        elif os.path.exists(download_fpath):
+            with open(download_fpath, 'r') as f:
+                self._mol_block = f.read()
+        else:
+            sparql_client.download_file(geometry_fpath, download_fpath)
+            with open(download_fpath, 'r') as f:
+                self._mol_block = f.read()
+        
+        return self._mol_block
+    
+    @property
+    def is_asymmetric(self) -> bool:
+        """
+        Returns True if the fragment is asymmetric, False otherwise.
+        This is determined by the number of dummy atoms in the fragment type.
+        """
+
+        if hasattr(self, '_is_asymmetric'):
+            return self._is_asymmetric
+        
+        from molecular_fragment_utils import is_asymmetric_dummy_atoms
+
+        self._is_asymmetric = is_asymmetric_dummy_atoms(
+            self.smiles,
+            list(self.hasDummyAtomicNumber)[0],
+        )
+
+        return self._is_asymmetric
+    
+    @classmethod
+    def from_mol_file(
+        cls, 
+        mol_file_path: str, 
+        fragment_type: FragmentType,
+        dummy_atomic_number: int = 0,
+        **kwargs
+    ) -> 'MolecularFragment':
+        """
+        Create a MolecularFragment instance from a .mol file.
+        This method assumes that the .mol file contains the necessary geometry and properties.
+        """
+        from molecular_fragment_utils import load_molecular_fragment_from_mol_file
+
+        # Load data including charge, molecular weight, molecular formula, atom_data, and smiles from the mol file
+        data = load_molecular_fragment_from_mol_file(
+            mol_file_path,
+            dummy_atomic_number=dummy_atomic_number,
+            **kwargs
+        )
+
+        charge = kwargs.get('charge', data["charge"])
+        
+        # Create a geometry object
+        pts = []
+        for atom in data["atoms"]:
+            pt = Point(
+                x=atom["coordinate_x"],
+                y=atom["coordinate_y"], 
+                z=atom["coordinate_z"],
+                label=atom["label"]
+            )
+            pts.append(pt)
+
+        geo = ontospecies.Geometry(
+            hasPoints=pts,
+            hasGeometryFile=mol_file_path,
+        )
+
+        # Create a MolecularFragment instance
+        return cls(
+            instance_iri=cls.init_instance_iri(),
+            hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
+            hasMolecularWeight=ontospecies.MolecularWeight(hasValue=om.Measure(hasNumericalValue=data["molecular_weight"], hasUnit=om.gramPerMole)),
+            hasMolecularFormula=data["molecular_formula"],
+            hasGeometry=geo,
+            hasFragmentType=fragment_type,
+            hasSmiles=data["smiles"],
+            hasDummyAtomicNumber=dummy_atomic_number,
+        )
+    
+
+############## ChemicalBuildingUnit Template ##############
+## Object properties
+HasFragmentConstraint = ObjectProperty.create_from_base('HasFragmentConstraint', OntoMOPs)
+HasCBUFragmentTemplate = ObjectProperty.create_from_base('HasCBUFragmentTemplate', OntoMOPs)
+HasChemicalBuildingUnitTemplate = ObjectProperty.create_from_base('HasChemicalBuildingUnitTemplate', OntoMOPs)
+HasChemicalBuildingUnitFragment = ObjectProperty.create_from_base('HasChemicalBuildingUnitFragment', OntoMOPs)
+
+## Data properties
+HasFragmentPositions = DatatypeProperty.create_from_base('HasFragmentPositions', OntoMOPs)
+HasFragmentOrientation = DatatypeProperty.create_from_base('HasFragmentOrientation', OntoMOPs)
+
+class CBUFragmentTemplate(BaseClass): #TODO rename to CBUFragmentSlot
+    rdfs_isDefinedBy = OntoMOPs
+    hasFragmentType: HasFragmentType[FragmentType]
+    hasFragmentPositions: HasFragmentPositions[int] # really only required for linkers
+    
+    @property
+    def allowed_types(self) -> tuple[FragmentType, ...]:
+        """All fragment classes that fulfil this slot."""
+        return tuple(self.hasFragmentType)
+    
+    def accepts(self, frag: "MolecularFragment") -> bool:
+        # return frag.hasFragmentType in self.allowed_types
+        if frag.hasFragmentType & self.hasFragmentType:
+            return True
+        else:
+            return False
+
+    @property
+    def is_linker_slot(self) -> bool:
+        return any(isinstance(t, LinkerFragment) for t in self.allowed_types)
+
+    @property
+    def is_binding_slot(self) -> bool:
+        return any(isinstance(t, BindingFragment) for t in self.allowed_types)
+    
+    @property
+    def is_node_slot(self) -> bool:
+        return any(isinstance(t, NodeFragment) for t in self.allowed_types)
+
+
+class ChemicalBuildingUnitTemplate(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    hasGenericBuildingUnitType: HasGBUType[GenericBuildingUnitType]
+    hasCBUFragmentTemplate: HasCBUFragmentTemplate[CBUFragmentTemplate]
+
+    @property
+    def gbu_type(self):
+        return list(self.hasGenericBuildingUnitType)[0].label
+
+    @property
+    def all_allowed_types(self) -> Set[FragmentType]:
+        """
+        Returns a set of all fragment types that are allowed in this template.
+        This includes all types from all CBUFragmentTemplates.
+        """
+        return {ft for slot in self.hasCBUFragmentTemplate for ft in slot.allowed_types}
+
+    @property
+    def linker_fragment_order(self) -> Dict:
+        """
+        Returns a mapping of fragment positions to allowed fragment types for linker slots.
+
+        Returns:
+            Dict[int, Set[FragmentType]]: A dictionary where keys are fragment positions (int)
+            and values are sets of allowed FragmentType instances for those positions.
+        """
+        from collections import defaultdict
+        pos2types = defaultdict(set)
+
+        for slot in self.hasCBUFragmentTemplate:
+            if slot.is_linker_slot:
+                for pos in slot.hasFragmentPositions:
+                    pos2types[pos].update(slot.allowed_types)
+
+        # sort for determinism
+        return dict(sorted(pos2types.items()))
+    
+    @classmethod
+    def validate_template(cls, template):
+        """
+        check that has one binding group required and the positions of different fragments are not overlapping
+        """
+        if not template.hasCBUFragmentTemplate:
+            raise ValueError("ChemicalBuildingUnitTemplate must have at least one CBUFragmentTemplate.")
+        
+        # Check that there is at least one binding fragment
+        binding_fragments = [f for f in template.hasCBUFragmentTemplate if f.is_binding_slot]
+        if not binding_fragments:
+            raise ValueError("ChemicalBuildingUnitTemplate must have at least one binding fragment.")
+
+        # Check that positions are unique
+        all_positions = [pos for f in template.hasCBUFragmentTemplate for pos in f.hasFragmentPositions]
+        if len(all_positions) != len(set(all_positions)):
+            raise ValueError("ChemicalBuildingUnitTemplate has overlapping fragment positions.")
+        
+        return True
+
+        
+
+    def validate_fragment_list(self, fragments: List[MolecularFragment]) -> bool:
+        """
+        Validate the template against the provided fragments.
+        This method checks if the fragments match the required types and positions defined in the template.
+        """
+
+        # every template slot is satisfied by at least one fragment
+        # and every fragment matches at least one template slot
+        for slot in self.hasCBUFragmentTemplate:
+            if not any(slot.accepts(f) for f in fragments):
+                return False
+        if not all(any(slot.accepts(f) for slot in self.hasCBUFragmentTemplate)
+                   for f in fragments):
+            return False
+        
+        # for the linker fragments, check that the fragment types at each position/index match
+        # only need to check these as the other slots are not strictly ordered
+        linker_sets = self.linker_fragment_order
+        for pos, allowed in linker_sets.items():
+            if pos >= len(fragments):
+                return False
+            frag = fragments[pos]
+            if not frag.is_linker_fragment:
+                return False
+            if not frag.hasFragmentType & allowed:
+                return False
+
+        return True
+
+        
+
+
+class ChemicalBuildingUnitFragment(BaseClass):
+    rdfs_isDefinedBy = OntoMOPs
+    hasMolecularFragment: HasMolecularFragment[MolecularFragment]
+    hasFragmentPositions: HasFragmentPositions[int]
+    hasFragmentOrientation: Optional[HasFragmentOrientation[int]] = None
+    
+####################################################
+
+
 class ChemicalBuildingUnit(BaseClass):
     rdfs_isDefinedBy = OntoMOPs
     hasBindingDirection: HasBindingDirection[BindingDirection]
-    hasBindingSite: HasBindingSite[BindingSite]
+    hasBindingSite: Optional[HasBindingSite[BindingSite]]
     isFunctioningAs: IsFunctioningAs[GenericBuildingUnit]
     hasCharge: ontospecies.HasCharge[ontospecies.Charge]
     hasMolecularWeight: ontospecies.HasMolecularWeight[ontospecies.MolecularWeight]
-    hasGeometry: ontospecies.HasGeometry[ontospecies.Geometry]
+    hasGeometry: Optional[ontospecies.HasGeometry[ontospecies.Geometry]]
     hasCBUFormula: HasCBUFormula[str]
-    hasCBUAssemblyCenter: HasCBUAssemblyCenter[CBUAssemblyCenter]
+    hasCBUAssemblyCenter: Optional[HasCBUAssemblyCenter[CBUAssemblyCenter]]
+
+    hasChemicalBuildingUnitFragment: Optional[HasChemicalBuildingUnitFragment[ChemicalBuildingUnitFragment]] = None
+    hasChemicalBuildingUnitTemplate: Optional[HasChemicalBuildingUnitTemplate[ChemicalBuildingUnitTemplate]] = None
+    hasSmiles: Optional[HasSmiles[str]] = None
 
     @property
     def charge(self):
@@ -553,21 +985,29 @@ class ChemicalBuildingUnit(BaseClass):
 
     @property
     def is_metal_cbu(self):
-        return all([isinstance(bs, MetalSite) for bs in list(self.hasBindingSite)])
+        return all([isinstance(bs, MetalSite) for bs in self.ordered_binding_sites])
 
     @property
     def active_binding_sites(self):
-        return [bs for bs in list(self.hasBindingSite) if not bs.temporarily_blocked]
+        return [bs for bs in self.ordered_binding_sites if not bs.temporarily_blocked]
+    
+    @property
+    def ordered_binding_sites(self) -> list[BindingSite]:
+        return sorted(
+            list(self.hasBindingSite),
+            key=lambda bs: list(bs.hasOrder)[0]
+        )
 
     def allocate_active_binding_sites(self, num: int):
-        for bs in list(self.hasBindingSite)[num:]:
+        for bs in self.ordered_binding_sites[num:]:
             bs.temporarily_blocked = True
 
     def release_blocked_binding_sites(self):
-        for bs in self.hasBindingSite:
+        for bs in self.ordered_binding_sites:
             bs.temporarily_blocked = False
 
     def load_geometry_from_fileserver(self, sparql_client):
+        print("loading xyz from file server")
         return list(self.hasGeometry)[0].load_xyz_from_geometry_file(sparql_client)
 
     def add_binding_site_and_assembly_center_from_json(
@@ -575,9 +1015,9 @@ class ChemicalBuildingUnit(BaseClass):
     ):
         with open(cbu_json_fpath, "r") as file:
             cbu_json = json.load(file)
-        binding_sides, assemb_center, atom_points = self.__class__.process_geometry_json(
+        binding_sites, assemb_center, atom_points = self.__class__.process_geometry_json(
             cbu_json, ocn, binding_fragment, gbu_type, metal_site)
-        self.hasBindingSite = binding_sides
+        self.hasBindingSite = binding_sites
         self.hasCBUAssemblyCenter = assemb_center
 
     @staticmethod
@@ -602,15 +1042,22 @@ class ChemicalBuildingUnit(BaseClass):
 
         # iterate through the json file and process the coordinates
         _bs_clz = MetalSite if metal_site else OrganicSite
+        bs_order = 0
         for k, v in cbu_json.items():
             if v['atom'] == 'X':
                 pt = _bs_clz(
                     hasOuterCoordinationNumber=ocn,
-                    hasBindingPoint=BindingPoint(hasX=v['coordinate_x'], hasY=v['coordinate_y'], hasZ=v['coordinate_z']),
+                    hasBindingPoint=BindingPoint(
+                        hasX=v["coordinate_x"],
+                        hasY=v["coordinate_y"],
+                        hasZ=v["coordinate_z"],
+                    ),
                     hasBindingFragment=binding_fragment,
+                    hasOrder=bs_order,
                 )
                 cbu_binding_points[k] = pt
                 lst_binding_sites.append(pt)
+                bs_order += 1
             elif str(v['atom']).lower() == 'center':
                 print('NOTE!!! Center point is not used in the current implementation.')
             else:
@@ -651,7 +1098,7 @@ class ChemicalBuildingUnit(BaseClass):
         return cls(
             instance_iri=cbu_iri,
             # TODO hasBindingDirection should be modified once side-binding is implemented
-            hasBindingDirection='https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
+            hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
             hasBindingSite=binding_sides,
             isFunctioningAs=gbu if gbu is not None else set(),
             hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=charge, hasUnit=om.elementaryCharge)),
@@ -660,6 +1107,428 @@ class ChemicalBuildingUnit(BaseClass):
             hasCBUFormula=cbu_formula,
             hasCBUAssemblyCenter=assemb_center
         )
+
+    def create_cbu_from_ordered_fragments_and_template(
+        template: ChemicalBuildingUnitTemplate,
+        fragments: List[MolecularFragment],
+        linker_first_dummy_idxs: List[int] = None,
+        gbu: Optional[object] = None,
+        # gbu_type: Optional[str] = None,
+        sanitize: bool = True,
+        optimize: bool = False,
+        symmetric_linker_orientations: bool = False,
+        **kwargs
+    ) -> ChemicalBuildingUnit:
+        """
+        Assemble a single CBU from a fragment list whose order matches the template's
+        slot order (sorted by min(hasFragmentPositions)). Fragments are duplicated and
+        ordered by the global hasFragmentPositions, and linker orientation bits passed
+        per-linker-slot are expanded to per-linker-position.
+
+        Parameters
+        ----------
+        template : ChemicalBuildingUnitTemplate
+        fragments : List[MolecularFragment]
+            One fragment per slot, in the same order as the
+            template's fragment slots when sorted by hasFragmentPositions.
+        linker_first_dummy_idxs : List[int]
+            One 0/1 orientation bit per linker slot (before expansion).
+        symmetric_linker_orientations : bool
+            If True, for an asymmetric linker occupying multiple positions in a
+            single slot, the expanded bits will alternate (0,1,0,...) starting from
+            the provided slot bit.
+
+        TODO: change to providing the entire linker_first_dummy_idxs 
+        """
+
+        # canonical slot order
+        frag_templates = sorted(
+            template.hasCBUFragmentTemplate,
+            key=lambda ft: min(ft.hasFragmentPositions)
+        )
+
+        if len(fragments) != len(frag_templates):
+            raise ValueError(f"Expected {len(frag_templates)} fragments, got {len(fragments)}.")
+
+        # validate fragments against template slots
+        for frag, ft in zip(fragments, frag_templates):
+            if not ft.accepts(frag):
+                raise ValueError(f"Fragment {frag} does not match template slot {ft}.")
+
+        # get position map and produce ordered frags and slots
+        position_map = {}
+        for frag, ft in zip(fragments, frag_templates):
+            for pos in ft.hasFragmentPositions:
+                position_map[pos] = (frag, ft)
+
+        ordered_positions = sorted(position_map)
+        ordered_pairs = [position_map[p] for p in ordered_positions]
+        frags = [f for (f, _) in ordered_pairs]
+        fts   = [t for (_, t) in ordered_pairs]
+
+        # identify linker fragments and their positions in the ordered list
+        linker_info = [
+            (i, frags[i], fts[i]) for i in range(len(frags)) if frags[i].is_linker_fragment
+        ]
+
+        # map each slot to the indices it occupies within linker_info
+        slot_positions_map = {}
+        for idx_in_li, (_, frag_i, ft_i) in enumerate(linker_info):
+            slot_positions_map.setdefault(ft_i, []).append(idx_in_li)
+
+        # validate and expand the per-slot bits to per-linker-position bits
+        linker_slot_pairs = [(frag, ft) for frag, ft in zip(fragments, frag_templates) if frag.is_linker_fragment]
+
+        if linker_first_dummy_idxs is None: 
+            linker_first_dummy_idxs = [0] * len(linker_info)
+
+        if len(linker_first_dummy_idxs) != len(linker_slot_pairs):
+            raise ValueError(
+                f"Expected {len(linker_slot_pairs)} orientation bits (one per linker slot), "
+                f"got {len(linker_first_dummy_idxs)}."
+            )
+
+        for b in linker_first_dummy_idxs:
+            if b not in (0, 1):
+                raise ValueError("Orientation bits must be 0 or 1.")
+
+        # Prepare the final per-position orientation bits
+        expanded_bits = [0] * len(linker_info)
+
+        for slot_bit, (slot_frag, slot_ft) in zip(linker_first_dummy_idxs, linker_slot_pairs):
+            li_indices = slot_positions_map.get(slot_ft)
+
+            if symmetric_linker_orientations and slot_frag.is_asymmetric and len(li_indices) > 1:
+                # Alternate 0/1 starting from the provided slot_bit
+                for j, li_idx in enumerate(li_indices):
+                    expanded_bits[li_idx] = slot_bit if (j % 2 == 0) else (1 - slot_bit)
+            else:
+                # Same bit for all positions belonging to this slot
+                for li_idx in li_indices:
+                    expanded_bits[li_idx] = slot_bit
+
+        # assemble
+        cbu = ChemicalBuildingUnit.from_molecular_fragments(
+            fragments=frags,                         # one fragment per *position* in global order
+            gbu_type=template.gbu_type,
+            gbu=gbu,
+            sanitize=sanitize,
+            optimize=optimize,
+            linker_first_dummy_idxs=expanded_bits,   # one bit per *linker position* in linker_info order
+            **kwargs
+        )
+        cbu.hasChemicalBuildingUnitTemplate = {template}
+        return cbu
+
+
+    
+    @classmethod
+    def from_molecular_fragments(
+        cls,
+        fragments: List[MolecularFragment],
+        gbu_type: str,
+        gbu: Optional[GenericBuildingUnit] = None,
+        direct_binding: bool = True,
+        metal_site: bool = False,
+        linker_first_dummy_idxs = None,
+        **kwargs
+    ) -> 'ChemicalBuildingUnit':
+        from molecular_fragment_utils import assemble_fragments_to_cbu
+
+        binding_fragments = [f for f in fragments if f.is_binding_fragment]
+        linker_fragments = [f for f in fragments if f.is_linker_fragment]
+        node_fragments = [f for f in fragments if f.is_node_fragment]
+
+        cbu_frags = [ # TODO add direction
+            ChemicalBuildingUnitFragment(
+                hasMolecularFragment=frag,
+                hasFragmentPositions=[i for i in range(len(fragments)) if fragments[i] == frag]
+            ) for frag in set(fragments)
+        ]
+
+        if not direct_binding:
+            raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
+        if not binding_fragments: # what if wanted to assemble only linker and node fragments e.g. 4-planar cores? could use the frag util functions, same for substituting frags
+            raise ValueError("The list of binding fragments is empty.")
+
+        # TODO: reset all fragments to have the same dummy atomic number (maybe when load from mol file)
+        dummy_atomic_number = {list(x.hasDummyAtomicNumber)[0] for x in fragments}
+        if len(dummy_atomic_number) != 1:
+            raise ValueError("Currently all fragments must have the same dummy atomic number.")
+        
+        dummy_atomic_number = list(dummy_atomic_number)[0]
+        
+        binding_group = binding_fragments[0]
+        ocn = list(binding_group.fragment_type.hasOuterCoordinationNumber)[0]
+        binding_atoms = list(binding_group.fragment_type.hasBindingFragment)[0]
+
+        cbu_json, cbu_smiles, cbu_formula, cbu_mol_block = assemble_fragments_to_cbu(
+            linker_mol_files=[list(x.hasGeometry)[0].geometry_file for x in linker_fragments],
+            binding_group_mol_files = [list(x.hasGeometry)[0].geometry_file for x in binding_fragments][0],
+            node_mol_files = [list(x.hasGeometry)[0].geometry_file for x in node_fragments][0] if node_fragments else None,
+            dummy_atomic_number=dummy_atomic_number,
+            linker_first_dummy_idxs=linker_first_dummy_idxs,
+            **kwargs
+        )
+
+        cbu_charge = 0
+        cbu_mw = 0
+        
+        for frag in fragments:
+            cbu_charge += frag.charge
+            cbu_mw += frag.molecular_weight
+
+        binding_sites, assemb_center, atom_points = cls.process_geometry_json(
+            cbu_json, 
+            ocn, 
+            binding_atoms,
+            gbu_type, 
+            metal_site
+        )
+        
+        # prepare the geometry of the CBU   
+        cbu_iri = cls.init_instance_iri()
+        cbu_xyz_file = f"./new_cbus/{cbu_iri.split('/')[-1]}.xyz" # TODO: change to relative path to the kg
+        cbu_geo = ontospecies.Geometry.from_points(atom_points, cbu_xyz_file)
+            
+        # instantiate actual CBU
+        return cls(
+            instance_iri=cls.init_instance_iri(),
+            # TODO hasBindingDirection should be modified once side-binding is implemented
+            hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
+            hasBindingSite=binding_sites,
+            isFunctioningAs=gbu if gbu is not None else set(),
+            hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=cbu_charge, hasUnit=om.elementaryCharge)),
+            hasMolecularWeight=ontospecies.MolecularWeight(hasValue=om.Measure(hasNumericalValue=cbu_mw, hasUnit=om.gramPerMole)),
+            hasGeometry=cbu_geo,
+            hasCBUFormula=cbu_formula,
+            hasCBUAssemblyCenter=assemb_center,
+            hasChemicalBuildingUnitFragment=cbu_frags,
+            hasSmiles=cbu_smiles,
+        )
+    
+    @classmethod
+    def from_molecular_fragments_smiles(
+        cls,
+        fragments: List[MolecularFragment],
+        gbu_type: str,
+        gbu: Optional[GenericBuildingUnit] = None,
+        direct_binding: bool = True,
+        metal_site: bool = False,
+        linker_first_dummy_idxs = None,
+        **kwargs
+    ) -> 'ChemicalBuildingUnit':
+        from molecular_fragment_utils import smiles_assemble_fragments_to_cbu
+
+        binding_fragments = [f for f in fragments if f.is_binding_fragment]
+        linker_fragments = [f for f in fragments if f.is_linker_fragment]
+        node_fragments = [f for f in fragments if f.is_node_fragment]
+
+        cbu_frags = [
+            ChemicalBuildingUnitFragment(
+                hasMolecularFragment=frag,
+                hasFragmentPositions=[i for i in range(len(fragments)) if fragments[i] == frag]
+            ) for frag in set(fragments)
+        ]
+
+        if not direct_binding:
+            raise NotImplementedError("Non-direct binding, e.g. side binding, is not yet supported.")
+        if not binding_fragments: # what if wanted to assemble only linker and node fragments e.g. 4-planar cores? wouldnt' be a cbu, use the frag util functions, same for substituting frags
+            raise ValueError("The list of binding fragments is empty.")
+
+        # TODO: reset all fragments to have the same dummy atomic number (maybe when load from mol file)
+        dummy_atomic_number = {list(x.hasDummyAtomicNumber)[0] for x in fragments}
+        if len(dummy_atomic_number) != 1:
+            raise ValueError("Currently all fragments must have the same dummy atomic number.")
+        
+        dummy_atomic_number = list(dummy_atomic_number)[0]
+        
+        binding_group = binding_fragments[0]
+        ocn = list(binding_group.fragment_type.hasOuterCoordinationNumber)[0]
+        binding_atoms = list(binding_group.fragment_type.hasBindingFragment)[0]
+
+        cbu_smiles, cbu_formula = smiles_assemble_fragments_to_cbu(
+            linker_smiles=[x.smiles for x in linker_fragments],
+            binding_smiles = [x.smiles for x in binding_fragments][0],
+            node_smiles = [x.smiles for x in node_fragments][0] if node_fragments else None,
+            dummy_atomic_number=dummy_atomic_number,
+            linker_first_dummy_idxs=linker_first_dummy_idxs,
+            **kwargs
+        )
+
+        cbu_charge = 0
+        cbu_mw = 0
+        
+        for frag in fragments:
+            cbu_charge += frag.charge
+            cbu_mw += frag.molecular_weight
+            
+        # instantiate actual CBU
+        return cls(
+            instance_iri=cls.init_instance_iri(),
+            # TODO hasBindingDirection should be modified once side-binding is implemented
+            hasBindingDirection=DIRECT_BINDING,#'https://www.theworldavatar.com/kg/ontomops/DirectBinding_f3716525-0a8d-430f-ae24-0a043ec0c93a',
+            hasBindingSite=None,
+            isFunctioningAs=gbu if gbu is not None else set(),
+            hasCharge=ontospecies.Charge(hasValue=om.Measure(hasNumericalValue=cbu_charge, hasUnit=om.elementaryCharge)),
+            hasMolecularWeight=ontospecies.MolecularWeight(hasValue=om.Measure(hasNumericalValue=cbu_mw, hasUnit=om.gramPerMole)),
+            hasGeometry=None,
+            hasCBUFormula=cbu_formula,
+            hasCBUAssemblyCenter=None,
+            hasChemicalBuildingUnitFragment=cbu_frags,
+            hasSmiles=cbu_smiles,
+            # hasMolecularFragment= linker_fragments + binding_fragments + node_fragments, # [*linker_fragments, *binding_fragments, *node_fragments],
+        )
+
+
+    @classmethod
+    def combinations_from_template_and_fragments(
+        cls,
+        template: ChemicalBuildingUnitTemplate,
+        fragments: List[MolecularFragment],
+        unique_only=True,
+        constraint_fn=None,
+        assemble_smiles=False,
+        max_cbus=None,
+        symmetric_linker_orientations: bool = False, 
+        **kwargs
+    ) -> List[ChemicalBuildingUnit]:
+        """
+        Create all ChemicalBuildingUnit instances from the given fragments.
+
+        Parameters
+        ----------
+        symmetric_linker_orientations : bool, optional
+            If True, then for every *individual* fragment template that is an
+            asymmetric linker AND has multiple positions, the first_dummy_index
+            values of the fragments occupying those positions will be forced to
+            alternate (e.g. only 0,1,0,1 or 1,0,1,0). This ensures only 
+            symmetric metal environments are generated
+            # TODO could just make sure the first and last are the same frag 
+            # and opposite orientation, but this is more general
+        """
+        from itertools import product
+
+        assemble_cbu_fn = (
+            ChemicalBuildingUnit.from_molecular_fragments_smiles
+            if assemble_smiles else
+            ChemicalBuildingUnit.from_molecular_fragments
+        )
+
+        cbus = []
+        unique_smiles = set()
+
+        frag_templates = sorted(
+            template.hasCBUFragmentTemplate,
+            key=lambda ft: min(ft.hasFragmentPositions)
+        )
+        fragment_lists = [
+            [f for f in fragments if ft.accepts(f)]
+            for ft in frag_templates
+        ]
+        if any(len(lst) == 0 for lst in fragment_lists):
+            raise ValueError("unfulfilled template positions, fragments do not match all required types.")
+
+        total_combinations = 0
+        for combo in product(*fragment_lists):
+            # Map template position → (fragment, fragment_template)
+            position_map = {}
+            for frag, ft in zip(combo, frag_templates):
+                for pos in ft.hasFragmentPositions:
+                    position_map[pos] = (frag, ft)
+            ordered = [position_map[p] for p in sorted(position_map)]
+
+            frags = [f for f, _ in ordered]
+            fts   = [t for _, t in ordered]
+
+            if constraint_fn and not constraint_fn(frags, fts):
+                continue
+
+            # gather only linker fragments
+            linker_info = [
+                (i, frags[i], fts[i])
+                for i in range(len(frags))
+                if frags[i].is_linker_fragment
+            ]
+            # positions (inside linker_info) that are asymmetric
+            asymm_slots = [
+                idx for idx, (_, frag, _) in enumerate(linker_info)
+                if frag.is_asymmetric
+            ]
+
+            # group asymmetric linker positions by their template 
+            template_slot_map = {}
+            for pos in asymm_slots:
+                _, _, ft = linker_info[pos]
+                template_slot_map.setdefault(ft, []).append(pos)
+
+            # keep only those templates with >1 positions
+            multi_pos_groups = {
+                ft: slot_list
+                for ft, slot_list in template_slot_map.items()
+                if len(ft.hasFragmentPositions) > 1
+            }
+
+            # generate unique orientation bit combinations
+            unique = []
+            for bits in product([0, 1], repeat=len(asymm_slots)):
+                # TODO does this work for nodes with one linker?
+                # skip mirrored duplicates
+                rev = bits[::-1]
+                inv = tuple(1 - b for b in rev)
+                if inv in unique:
+                    continue
+
+                if symmetric_linker_orientations and multi_pos_groups:
+                    valid = True
+                    for slot_list in multi_pos_groups.values():
+                        # indices of bits that correspond to this template
+                        sub = tuple(
+                            bits[asymm_slots.index(sl)]
+                            for sl in slot_list
+                        )
+                        if len(sub) > 1:
+                            # require the bits alternate to be (psuedo)symmetric
+                            if not all(sub[i] != sub[i+1] for i in range(len(sub)-1)):
+                                valid = False
+                                break
+                    if not valid:
+                        continue
+                unique.append(bits)
+
+            for bits in unique:
+                linker_first_dummy = [0] * len(linker_info)
+                for bit_idx, slot in enumerate(asymm_slots):
+                    linker_first_dummy[slot] = bits[bit_idx]
+
+                try:
+                    cbu = assemble_cbu_fn(
+                        fragments=frags,
+                        gbu_type=template.gbu_type,
+                        linker_first_dummy_idxs=linker_first_dummy,
+                        **kwargs
+                    )
+                except Exception as e:
+                    print(f"Skipping CBU due to assembly error: {e}")
+                    continue
+
+                smiles = next(iter(cbu.hasSmiles))
+                if unique_only and smiles in unique_smiles:
+                    if cbu.hasGeometry is not None:
+                        os.remove(list(cbu.hasGeometry)[0].geometry_file)
+                    continue
+                unique_smiles.add(smiles)
+                cbu.hasChemicalBuildingUnitTemplate = {template}
+                cbus.append(cbu)
+                total_combinations += 1
+
+                if max_cbus is not None and total_combinations > max_cbus:
+                    break
+            if max_cbus is not None and total_combinations > max_cbus:
+                break
+
+        print("total CBU combinations assembled =", total_combinations)
+        return cbus
 
     @property
     def vector_to_binding_site_plane(self):
@@ -815,6 +1684,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
     hasMOPFormula: HasMOPFormula[str]
     hasPoreSize: Optional[HasPoreSize[PoreSize]] = None
     hasOuterDiameter: Optional[HasOuterDiameter[om.Diameter]] = None
+    hasCalculationResult: Optional[HasCalculationResult[CalculationResult]] = None
 
     @classmethod
     def from_assemble(
@@ -825,6 +1695,11 @@ class MetalOrganicPolyhedron(CoordinationCage):
         ccdc: str = set(),
         sparql_client = None,
         upload_geometry: bool = False,
+        data_dir: str = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'data',
+            f'xyz_mops_{datetime.now().year}_{datetime.now().month}_{datetime.now().day}'
+        ),
     ):
         # prepare the variables
         mop_charge = 0
@@ -855,30 +1730,54 @@ class MetalOrganicPolyhedron(CoordinationCage):
             # TODO optimise below
             # rotate the CBU to match the GBU
             # rotate the vector from center to binding site plane of CBU to the vector from center to connecting point plane of GBU
+            first_alignment_vector_cbu = cbu.vector_to_binding_site_plane
             rotation_matrix_1 = {
-                gbu_center.instance_iri: cbu.vector_to_binding_site_plane.get_rotation_matrix_to_parallel(
-                    gbu_center.vector_to_connecting_point_plane, flip_if_180=True) for gbu_center in gbu.hasGBUCoordinateCenter
+                gbu_center.instance_iri: (
+                    first_alignment_vector_cbu.get_rotation_matrix_to_parallel(
+                        gbu_center.vector_to_connecting_point_plane, flip_if_180=True
+                    )
+                )
+                for gbu_center in gbu.ordered_coordinate_centers
             }
             # rotate the normal vector of the line connecting the farthest pair of binding sites of CBU to the same vector of GBU
             # NOTE that here we are getting the rotation matrix for the vector that is already rotated
             rotation_matrix_2 = {}
-            for gbu_center in gbu.hasGBUCoordinateCenter:
+
+            if gbu.is_4_planar:
+                second_vector_for_alignment_cbu = cbu.vector_to_shortest_side
+            else:
+                second_vector_for_alignment_cbu = cbu.vector_to_farthest_binding_site
+
+            for gbu_center in gbu.ordered_coordinate_centers:
                 gbu_center: GBUCoordinateCenter
                 if gbu.is_4_planar:
-                    second_vector_for_alignment_cbu = cbu.vector_to_shortest_side
                     second_vector_for_alignment_gbu = gbu_center.vector_to_shortest_side
                 else:
-                    second_vector_for_alignment_cbu = cbu.vector_to_farthest_binding_site
-                    second_vector_for_alignment_gbu = gbu_center.vector_to_farthest_connecting_point
-                rotated = rotation_matrix_1[gbu_center.instance_iri].apply(second_vector_for_alignment_cbu.as_array)
-                rotated_cbu_center_to_binding_site_plane = Vector.from_array(rotation_matrix_1[gbu_center.instance_iri].apply(cbu.vector_to_binding_site_plane.as_array))
-                rotation_matrix_2[gbu_center.instance_iri] = Vector.from_array(rotated).get_rotation_matrix_to_parallel(
-                    second_vector_for_alignment_gbu, flip_if_180=True, base_axis_if_180=rotated_cbu_center_to_binding_site_plane)
+                    second_vector_for_alignment_gbu = (
+                        gbu_center.vector_to_farthest_connecting_point
+                    )
+                rotated = rotation_matrix_1[gbu_center.instance_iri].apply(
+                    second_vector_for_alignment_cbu.as_array
+                )
+                rotated_cbu_center_to_binding_site_plane = Vector.from_array(
+                    rotation_matrix_1[gbu_center.instance_iri].apply(
+                        cbu.vector_to_binding_site_plane.as_array
+                    )
+                )
+                rotation_matrix_2[gbu_center.instance_iri] = Vector.from_array(
+                    rotated
+                ).get_rotation_matrix_to_parallel(
+                    second_vector_for_alignment_gbu,
+                    flip_if_180=True,
+                    base_axis_if_180=rotated_cbu_center_to_binding_site_plane,
+                )
             # put the two rotation matrix together
             cbu_rotation_matrix[cbu.instance_iri] = {
                 gbu_center.instance_iri: [
-                    rotation_matrix_1[gbu_center.instance_iri], rotation_matrix_2[gbu_center.instance_iri]
-                ] for gbu_center in gbu.hasGBUCoordinateCenter
+                    rotation_matrix_1[gbu_center.instance_iri],
+                    rotation_matrix_2[gbu_center.instance_iri],
+                ]
+                for gbu_center in gbu.ordered_coordinate_centers
             }
             # calculate the charge and molecular weight of the MOP
             mop_charge += cbu.charge * len(gbu.hasGBUCoordinateCenter)
@@ -1013,7 +1912,7 @@ class MetalOrganicPolyhedron(CoordinationCage):
 
         # prepare the geometry file and upload
         mop_iri = cls.init_instance_iri()
-        local_file_path = f"./data/xyz_mops_new/{am.rdfs_label}_{list(am.hasSymmetryPointGroup)[0]}___{mop_formula}___{mop_iri.split('/')[-1] if not bool(ccdc) else ccdc}.xyz"
+        local_file_path = os.path.join(data_dir, f"{list(am.rdfs_label)[0]}_{list(am.hasSymmetryPointGroup)[0]}___{mop_formula}___{mop_iri.split('/')[-1] if not bool(ccdc) else ccdc}.xyz")
         mop_geo = ontospecies.Geometry.from_points(adjusted_atoms, local_file_path)
         if upload_geometry:
             # upload the geometry to the KG
@@ -1057,3 +1956,226 @@ class MetalOrganicPolyhedron(CoordinationCage):
         fig.update_layout(autosize=False, width=1200, height=400)
         fig.show()
         return fig
+
+
+    def has_cbu_overlaps(self, threshold_factor: float = 1.2) -> bool:
+        """
+        Check for any atom–atom overlaps between distinct organic CBUs.
+
+        An overlap is flagged if any inter-CBU distance <
+        threshold_factor * (r_cov_i + r_cov_j),
+        where r_cov is the covalent radius from cap.PERIODIC_TABLE.
+
+        Returns
+        -------
+        overlap_detected : bool
+        """
+        from scipy.spatial import distance_matrix
+        import itertools
+
+        cbu_coords = []
+        cbu_radii  = []
+
+        for t in self.hasCBUAssemblyTransformation:
+            cbu_iri = next(iter(t.transforms))
+            cbu = KnowledgeGraph.get_object_from_lookup(cbu_iri)
+            if cbu.is_metal_cbu:
+                continue
+
+            geo = next(iter(cbu.hasGeometry))
+            if geo.hasPoints is None:
+                raise ValueError(f"Geometry for CBU {cbu_iri} not loaded.")
+            binding_atoms = [
+                atom for atom in geo.hasPoints
+                if atom.label.lower() not in ('x', 'center')
+            ]
+
+            pts = np.array([atom.as_array for atom in binding_atoms])
+            radii = np.array([
+                cap.PERIODIC_TABLE.GetRcovalent(atom.label)
+                for atom in binding_atoms
+            ])
+
+            quat = next(iter(t.quaternionToRotate))
+            R = Quaternion.from_string(quat).as_rotation_matrix()
+            pts = np.array([R.apply(p) for p in pts])
+
+            s = next(iter(t.scaleFactorToAlignCoordinateCenter))
+            cbu_ctr = next(iter(cbu.hasCBUAssemblyCenter)).coordinates.as_array
+            gcc_iri = next(iter(t.alignsTo))
+            gcc = KnowledgeGraph.get_object_from_lookup(gcc_iri)
+            gcc_pts = gcc.coordinates.as_array * s
+            pts += (gcc_pts - R.apply(cbu_ctr))
+            vec = Vector.from_string(
+                next(iter(t.translationVectorToAlignOrigin))
+            ).as_array
+            pts += vec
+
+            cbu_coords.append(pts)
+            cbu_radii.append(radii)
+
+        for i, j in itertools.combinations(range(len(cbu_coords)), 2):
+            A, B = cbu_coords[i], cbu_coords[j]
+            ra, rb = cbu_radii[i], cbu_radii[j]
+            D = distance_matrix(A, B)
+            T = threshold_factor * (ra[:, None] + rb[None, :])
+            if np.any(D < T):
+                return True
+
+        return False
+# =============================== #
+#         calculations            #
+# =============================== #
+
+
+# === object properties ===
+HasCalculationMethod    = ObjectProperty.create_from_base('HasCalculationMethod', OntoMOPs)
+HasCalculatedProperty   = ObjectProperty.create_from_base('HasCalculatedProperty', OntoMOPs)
+HasCalculationParameter = ObjectProperty.create_from_base('HasCalculationParameter', OntoMOPs)
+HasCalculationResult = ObjectProperty.create_from_base('HasCalculationResult', OntoMOPs)
+HasOutputGeometry = ObjectProperty.create_from_base('HasOutputGeometry', OntoMOPs)
+HasSoftware = ObjectProperty.create_from_base('HasSoftware', OntoMOPs)
+
+
+# === Data properties ===
+HasName = DatatypeProperty.create_from_base("HasName", OntoMOPs) # could alternatively use rdfs:label but this would then be implicit and not ideal for filter queries
+HasLiteralValue = DatatypeProperty.create_from_base("HasLiteralValue", OntoMOPs)
+HasSoftwareVersion = DatatypeProperty.create_from_base("HasSoftwareVersion", OntoMOPs)
+HasNumericValue = DatatypeProperty.create_from_base("HasNumericValue", OntoMOPs)
+HasLiteralUnit = DatatypeProperty.create_from_base("HasLiteralUnit", OntoMOPs)
+
+# === classes ===
+class Software(BaseClass):
+    """The software package used to run a calculation."""
+    rdfs_isDefinedBy = OntoMOPs
+    hasName: HasName[str] # e.g. "Gaussian16", "LAMMPS"
+    hasSoftwareVersion: HasSoftwareVersion[str]
+
+class CalculationParameter(BaseClass):
+    """One parameter used in a calculation (value + unit)."""
+    rdfs_isDefinedBy = OntoMOPs
+    hasName: HasName[str] # e.g. "cutoff energy"
+
+class NumericCalculationParameter(CalculationParameter):
+    rdfs_isDefinedBy = OntoMOPs
+    hasNumericValue:  HasNumericValue[float]
+    hasLiteralUnit: HasLiteralUnit[str]
+
+class StringCalculationParameter(CalculationParameter):
+    rdfs_isDefinedBy = OntoMOPs
+    hasLiteralValue: HasLiteralValue[str]
+
+class CalculationMethod(BaseClass):
+    """How the calculation was performed."""
+    rdfs_isDefinedBy = OntoMOPs
+    hasCalculationParameter: HasCalculationParameter[CalculationParameter]
+    hasSoftware: HasSoftware[Software]
+
+class CalculatedProperty(BaseClass):
+    """A computed result from the calculation."""
+    rdfs_isDefinedBy = OntoMOPs
+    hasNumericValue:  HasNumericValue[float]
+    hasLiteralUnit: HasLiteralUnit[str]
+    hasName: HasName[str] # e.g. "total energy", "HOMO-LUMO gap"
+
+class CalculationResult(BaseClass):
+    """
+    The result of a calculation
+    """
+    rdfs_isDefinedBy = OntoMOPs
+    hasOutputGeometry: HasOutputGeometry[ontospecies.Geometry]
+    hasCalculationMethod:  HasCalculationMethod[CalculationMethod]
+    hasCalculatedProperty: HasCalculatedProperty[CalculatedProperty]
+
+    @classmethod
+    def from_software_parameters_properties(
+        cls,
+        software: dict,
+        parameters: list,
+        properties: list,
+        output_geometry: ontospecies.Geometry
+    ):
+        """
+        Construct a CalculationResult from raw software metadata, calculation parameters,
+        computed properties, and an output geometry.
+
+        This factory method wraps the given software info in a Software object, converts
+        each entry in `parameters` into either a StringCalculationParameter or
+        NumericCalculationParameter, groups them into a CalculationMethod, then does the
+        same for each entry in `properties` to produce a set of CalculatedProperty objects.
+        Finally it returns a new CalculationResult bundling the geometry, properties, and method.
+
+        Args:
+            software (dict):
+                A dict containing:
+                - "name" (str): the software package name (e.g. "Gaussian").
+                - "version" (str): the software version (e.g. "16").
+            parameters (List[Tuple]):
+                A list of 2- or 3-tuples describing calculation parameters:
+                - (name: str, literal_value: str) for string parameters, or
+                - (name: str, numeric_value: Union[int,float], unit: str) for numeric parameters.
+            properties (List[Tuple]):
+                A list of 3-tuples describing computed properties:
+                - (name: str, numeric_value: Union[int,float], unit: str).
+            output_geometry (ontospecies.Geometry):
+                The geometry object produced by the calculation.
+
+        Returns:
+            CalculationResult:
+                An object containing:
+                - hasOutputGeometry: the provided `output_geometry`
+                - hasCalculatedProperty: a set of CalculatedProperty objects
+                - hasCalculationMethod: a CalculationMethod wrapping the software and its parameters
+
+        Example:
+            >>> geom = ontospecies.Geometry(...)
+            >>> result = CalculationResult.from_software_parameters_properties(
+            ...     software={"name": "Gaussian", "version": "16"},
+            ...     parameters=[
+            ...         ("method", "HF"),
+            ...         ("basis", "6-31G*"),
+            ...         ("thresh", 1e-6, "unitless")
+            ...     ],
+            ...     properties=[
+            ...         ("energy", -75.0234, "hartree"),
+            ...         ("dipole", 1.23, "Debye")
+            ...     ],
+            ...     output_geometry=geom
+            ... )
+        """
+
+        software = Software(
+            hasName=software["name"],
+            hasSoftwareVersion=software["version"],
+        )
+        calc_params=[]
+
+        for param in parameters:
+            if len(param) == 2:
+                calc_params.append(
+                    StringCalculationParameter(hasName=param[0], hasLiteralValue=param[1])
+                )
+            else:
+                calc_params.append(
+                    NumericCalculationParameter(hasName=param[0], hasNumericValue=float(param[1]), hasLiteralUnit=param[2]),
+                )
+
+        calc_method = CalculationMethod(
+            hasSoftware=software,
+            hasCalculationParameter=set(calc_params),
+        )
+
+        properties = []
+        for prop in properties:
+            properties.append(CalculatedProperty(
+                hasName=prop[0],
+                hasNumericValue=prop[1],
+                hasLiteralUnit=prop[2],
+            ))
+
+
+        return CalculationResult(
+            hasOutputGeometry=output_geometry,
+            hasCalculatedProperty=set(properties),
+            hasCalculationMethod=calc_method,
+        )
